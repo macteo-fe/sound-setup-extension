@@ -29,6 +29,8 @@ const path_1 = require("path");
 const editorAsset_1 = require("../../lib/editorAsset");
 const soundConfigGenerator_1 = require("../../lib/soundConfigGenerator");
 const soundConfigChecker_1 = require("../../lib/soundConfigChecker");
+const sceneNode_1 = require("../../lib/sceneNode");
+const setupSfxList_1 = require("../../lib/setupSfxList");
 function getInputValue(el) {
     var _a;
     return ((_a = el === null || el === void 0 ? void 0 : el.value) !== null && _a !== void 0 ? _a : '').trim();
@@ -60,17 +62,84 @@ module.exports = Editor.Panel.define({
     $: {
         gameID: '#gameID',
         folder: '#folder',
+        soundNode: '#soundNode',
+        soundNodeHint: '#soundNodeHint',
         sfxFolder: '#sfxFolder',
         bgmFolder: '#bgmFolder',
         preserveBgm: '#preserveBgm',
+        btnPickNode: '#btnPickNode',
+        btnSetupSfx: '#btnSetupSfx',
         btnGenerate: '#btnGenerate',
         btnCheck: '#btnCheck',
         btnClear: '#btnClear',
         results: '#results',
     },
     methods: {
+        getSoundNodeUuid() {
+            var _a;
+            return ((_a = this.$.soundNode) === null || _a === void 0 ? void 0 : _a.value) || undefined;
+        },
+        async refreshSoundNodeHint() {
+            const hint = this.$.soundNodeHint;
+            if (!hint) {
+                return;
+            }
+            const uuid = this.getSoundNodeUuid();
+            if (!uuid) {
+                hint.textContent = '';
+                return;
+            }
+            const info = await (0, sceneNode_1.querySceneNode)(uuid);
+            hint.textContent = info ? (0, sceneNode_1.formatNodeHint)(info) : uuid;
+        },
+        async pickSoundNodeFromSelection() {
+            const uuid = (0, sceneNode_1.getSelectedNodeUuid)();
+            if (!uuid) {
+                this.logError('Select a node in the Hierarchy first.');
+                return;
+            }
+            const el = this.$.soundNode;
+            if (el) {
+                el.value = uuid;
+            }
+            await this.refreshSoundNodeHint();
+        },
         logError(message) {
             this.$.results.innerHTML += `<div class="unused">${message}</div>`;
+        },
+        async setupSfxList() {
+            var _a, _b, _c;
+            const gameId = getInputValue(this.$.gameID);
+            const nodeUuid = this.getSoundNodeUuid();
+            const sfxFolderUuid = (_a = this.$.sfxFolder) === null || _a === void 0 ? void 0 : _a.value;
+            if (!gameId) {
+                this.logError('Game ID is required for sound id naming.');
+                return;
+            }
+            if (!nodeUuid) {
+                this.logError('Assign a sound node with SoundPlayerModuleImpl.');
+                return;
+            }
+            if (!sfxFolderUuid) {
+                this.logError('Select an SFX folder with mp3 files.');
+                return;
+            }
+            try {
+                const result = await (0, setupSfxList_1.setupSfxListOnNode)(nodeUuid, sfxFolderUuid, gameId);
+                this.$.results.innerHTML = (0, setupSfxList_1.formatSetupSfxListHtml)(result);
+                console.log('[sound-setup] Setup SFX list', result);
+                for (const item of (_b = result.addedItems) !== null && _b !== void 0 ? _b : []) {
+                    console.log(`[sound-setup] + ${item.fileName} → ${item.soundId}`);
+                }
+                for (const item of (_c = result.skippedItems) !== null && _c !== void 0 ? _c : []) {
+                    console.log(`[sound-setup] − ${item.fileName} → ${item.soundId} (skipped)`);
+                }
+            }
+            catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                this.logError(`Setup SFX list failed: ${message}`);
+                console.error('[sound-setup] setup SFX list failed', err);
+            }
         },
         async generateConfig() {
             var _a, _b;
@@ -147,14 +216,19 @@ module.exports = Editor.Panel.define({
         },
     },
     ready() {
-        var _a, _b, _c;
+        var _a, _b, _c, _d, _e, _f, _g;
         const $ = this.$;
-        (_a = $.btnGenerate) === null || _a === void 0 ? void 0 : _a.addEventListener('confirm', () => this.generateConfig());
-        (_b = $.btnCheck) === null || _b === void 0 ? void 0 : _b.addEventListener('confirm', () => this.checkUsage());
-        (_c = $.btnClear) === null || _c === void 0 ? void 0 : _c.addEventListener('confirm', () => this.clearResults());
+        (_a = $.btnSetupSfx) === null || _a === void 0 ? void 0 : _a.addEventListener('confirm', () => this.setupSfxList());
+        (_b = $.btnGenerate) === null || _b === void 0 ? void 0 : _b.addEventListener('confirm', () => this.generateConfig());
+        (_c = $.btnCheck) === null || _c === void 0 ? void 0 : _c.addEventListener('confirm', () => this.checkUsage());
+        (_d = $.btnClear) === null || _d === void 0 ? void 0 : _d.addEventListener('confirm', () => this.clearResults());
+        (_e = $.btnPickNode) === null || _e === void 0 ? void 0 : _e.addEventListener('confirm', () => this.pickSoundNodeFromSelection());
+        (_f = $.soundNode) === null || _f === void 0 ? void 0 : _f.addEventListener('change', () => this.refreshSoundNodeHint());
+        (_g = $.soundNode) === null || _g === void 0 ? void 0 : _g.addEventListener('confirm', () => this.refreshSoundNodeHint());
         if ($.results) {
             $.results.innerHTML = '<span class="info">Select folders and run Generate or Check usage.</span>';
         }
+        void this.refreshSoundNodeHint();
     },
     beforeClose() { },
     close() { },

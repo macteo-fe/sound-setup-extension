@@ -72,9 +72,31 @@
 
 ui-input,
 ui-asset,
+ui-node,
 ui-checkbox {
     flex: 1;
     min-width: 100px;
+}
+
+.node-ref-row ui-node {
+    min-width: 140px;
+}
+
+.node-ref-row ui-button {
+    flex: 0 0 auto;
+    min-width: 52px;
+}
+
+.node-hint {
+    margin: -2px 0 6px 96px;
+    font-size: 11px;
+    color: #9ca3af;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    word-break: break-all;
+}
+
+.node-hint:empty {
+    display: none;
 }
 
 .main-controls {

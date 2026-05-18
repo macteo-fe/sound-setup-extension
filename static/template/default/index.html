@@ -13,6 +13,12 @@
             <span class="scan-label">Project path</span>
             <ui-input id="folder" value="cc-release-slot/cc30-nine-tailed-fox-9766"></ui-input>
         </div>
+        <div class="scan-input node-ref-row">
+            <span class="scan-label">Sound node</span>
+            <ui-node id="soundNode" type="cc.Node" typename="Node" droppable="node" placeholder="Drag node from Hierarchy"></ui-node>
+            <ui-button id="btnPickNode" class="small">Pick</ui-button>
+        </div>
+        <div id="soundNodeHint" class="node-hint"></div>
         <div class="scan-input">
             <span class="scan-label">SFX folder</span>
             <ui-asset id="sfxFolder" droppable="cc.Asset" placeholder="Drag SFX folder (mp3)"></ui-asset>
@@ -27,7 +33,8 @@
     </div>
 
     <div class="main-controls">
-        <ui-button id="btnGenerate" class="primary">Generate SoundConfig</ui-button>
+        <ui-button id="btnSetupSfx" class="primary">Setup SFX list</ui-button>
+        <ui-button id="btnGenerate">Generate SoundConfig</ui-button>
         <ui-button id="btnCheck">Check usage</ui-button>
     </div>
 

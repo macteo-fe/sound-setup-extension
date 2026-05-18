@@ -39,6 +39,9 @@
                     "openPanel"
                 ]
             }
+        },
+        "scene": {
+            "script": "./scene.js"
         }
     },
     "author": "Cocos Creator",
