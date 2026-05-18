@@ -5,14 +5,16 @@
     </div>
 
     <div class="input-section">
-        <div class="scan-input">
+        <div class="scan-input node-ref-row">
             <span class="scan-label">Game ID</span>
-            <ui-input id="gameID" value="9766"></ui-input>
+            <ui-input id="gameID" placeholder="e.g. 9766"></ui-input>
+            <ui-button id="btnSyncScene" class="small" title="Fill Game ID and Project path from the open scene">From scene</ui-button>
         </div>
         <div class="scan-input">
             <span class="scan-label">Project path</span>
-            <ui-input id="folder" value="cc-release-slot/cc30-nine-tailed-fox-9766"></ui-input>
+            <ui-input id="folder" placeholder="cc-release-slot/cc30-nine-tailed-fox-9766"></ui-input>
         </div>
+        <div id="sceneDetectHint" class="node-hint scene-detect-hint"></div>
         <div class="scan-input node-ref-row">
             <span class="scan-label">Sound node</span>
             <ui-node id="soundNode" type="cc.Node" typename="Node" droppable="node" placeholder="Drag node from Hierarchy"></ui-node>

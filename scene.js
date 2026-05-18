@@ -173,6 +173,17 @@ function getSkipReason(soundId, clipUuid, soundIds, clipUuids) {
 
 exports.methods = {
     /**
+     * @returns {{ uuid: string, name: string }}
+     */
+    getOpenSceneInfo() {
+        const scene = director.getScene();
+        if (!scene) {
+            return { uuid: '', name: '' };
+        }
+        return { uuid: scene.uuid || '', name: scene.name || '' };
+    },
+
+    /**
      * @param {string} nodeUuid
      * @returns {{ sfxSoundIds: string[], musicSoundIds: string[], nodeName: string }}
      */

@@ -99,6 +99,10 @@ ui-checkbox {
     display: none;
 }
 
+.scene-detect-hint:not(:empty) {
+    color: #6ee7b7;
+}
+
 .field-tips {
     margin-bottom: 0;
     padding: 0;

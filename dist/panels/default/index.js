@@ -29,6 +29,7 @@ const path_1 = require("path");
 const editorAsset_1 = require("../../lib/editorAsset");
 const soundConfigGenerator_1 = require("../../lib/soundConfigGenerator");
 const soundConfigChecker_1 = require("../../lib/soundConfigChecker");
+const openSceneContext_1 = require("../../lib/openSceneContext");
 const sceneNode_1 = require("../../lib/sceneNode");
 const setupSfxList_1 = require("../../lib/setupSfxList");
 function getInputValue(el) {
@@ -37,6 +38,12 @@ function getInputValue(el) {
 }
 function getCheckboxValue(el) {
     return (el === null || el === void 0 ? void 0 : el.value) !== false;
+}
+function setInputValue(el, value) {
+    if (!el) {
+        return;
+    }
+    el.value = value;
 }
 function formatCheckResultsHtml(results) {
     const parts = ['<div class="section-title">=== Sound config usage ===</div>'];
@@ -54,7 +61,9 @@ function formatCheckResultsHtml(results) {
 }
 module.exports = Editor.Panel.define({
     listeners: {
-        show() { },
+        show() {
+            void this.applyOpenSceneContext();
+        },
         hide() { },
     },
     template: (0, fs_extra_1.readFileSync)((0, path_1.join)(__dirname, '../../../static/template/default/index.html'), 'utf-8'),
@@ -64,6 +73,8 @@ module.exports = Editor.Panel.define({
         folder: '#folder',
         soundNode: '#soundNode',
         soundNodeHint: '#soundNodeHint',
+        sceneDetectHint: '#sceneDetectHint',
+        btnSyncScene: '#btnSyncScene',
         sfxFolder: '#sfxFolder',
         preserveBgm: '#preserveBgm',
         btnPickNode: '#btnPickNode',
@@ -77,6 +88,32 @@ module.exports = Editor.Panel.define({
         getSoundNodeUuid() {
             var _a;
             return ((_a = this.$.soundNode) === null || _a === void 0 ? void 0 : _a.value) || undefined;
+        },
+        async applyOpenSceneContext() {
+            const hint = this.$.sceneDetectHint;
+            try {
+                const ctx = await (0, openSceneContext_1.detectGameContextFromOpenScene)();
+                if (!ctx) {
+                    if (hint) {
+                        hint.textContent = 'No open scene detected (open a .scene under assets/).';
+                    }
+                    return false;
+                }
+                setInputValue(this.$.gameID, ctx.gameId);
+                setInputValue(this.$.folder, ctx.projectPath);
+                if (hint) {
+                    hint.textContent = (0, openSceneContext_1.formatSceneContextHint)(ctx);
+                }
+                console.log('[sound-setup] Detected from open scene', ctx);
+                return true;
+            }
+            catch (err) {
+                if (hint) {
+                    hint.textContent = '';
+                }
+                console.warn('[sound-setup] scene context detection failed', err);
+                return false;
+            }
         },
         async refreshSoundNodeHint() {
             const hint = this.$.soundNodeHint;
@@ -211,20 +248,34 @@ module.exports = Editor.Panel.define({
         },
     },
     ready() {
-        var _a, _b, _c, _d, _e, _f, _g;
+        var _a, _b, _c, _d, _e, _f, _g, _h;
         const $ = this.$;
+        const panel = this;
+        const onSceneContextChange = () => {
+            void panel.applyOpenSceneContext();
+        };
+        panel._onSceneReady = onSceneContextChange;
         (_a = $.btnSetupSfx) === null || _a === void 0 ? void 0 : _a.addEventListener('confirm', () => this.setupSfxList());
         (_b = $.btnGenerate) === null || _b === void 0 ? void 0 : _b.addEventListener('confirm', () => this.generateConfig());
         (_c = $.btnCheck) === null || _c === void 0 ? void 0 : _c.addEventListener('confirm', () => this.checkUsage());
         (_d = $.btnClear) === null || _d === void 0 ? void 0 : _d.addEventListener('confirm', () => this.clearResults());
         (_e = $.btnPickNode) === null || _e === void 0 ? void 0 : _e.addEventListener('confirm', () => this.pickSoundNodeFromSelection());
-        (_f = $.soundNode) === null || _f === void 0 ? void 0 : _f.addEventListener('change', () => this.refreshSoundNodeHint());
-        (_g = $.soundNode) === null || _g === void 0 ? void 0 : _g.addEventListener('confirm', () => this.refreshSoundNodeHint());
+        (_f = $.btnSyncScene) === null || _f === void 0 ? void 0 : _f.addEventListener('confirm', () => this.applyOpenSceneContext());
+        (_g = $.soundNode) === null || _g === void 0 ? void 0 : _g.addEventListener('change', () => this.refreshSoundNodeHint());
+        (_h = $.soundNode) === null || _h === void 0 ? void 0 : _h.addEventListener('confirm', () => this.refreshSoundNodeHint());
         if ($.results) {
-            $.results.innerHTML = '<span class="info">Select folders and run Generate or Check usage.</span>';
+            $.results.innerHTML = '<span class="info">Open a game scene to auto-fill Game ID and Project path.</span>';
         }
+        Editor.Message.addBroadcastListener('scene:ready', onSceneContextChange);
+        void this.applyOpenSceneContext();
         void this.refreshSoundNodeHint();
     },
-    beforeClose() { },
+    beforeClose() {
+        const panel = this;
+        if (panel._onSceneReady) {
+            Editor.Message.removeBroadcastListener('scene:ready', panel._onSceneReady);
+            panel._onSceneReady = null;
+        }
+    },
     close() { },
 });

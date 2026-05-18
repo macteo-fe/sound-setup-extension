@@ -1,29 +1,33 @@
-import { readFileSync } from 'fs-extra';
+/* eslint-disable @typescript-eslint/explicit-function-return-type */
 import * as fs from 'fs-extra';
+import { readFileSync } from 'fs-extra';
 import { join } from 'path';
 import {
     getConfigDbUrl,
     getConfigFsPath,
-    getScriptsFsDir,
-    queryAudioClipsInFolder,
+    getScriptsFsDir
 } from '../../lib/editorAsset';
 import {
-    formatGenerateConfigHtml,
-    generateSoundConfigContent,
-    getSoundListKeysFromNode,
-    writeSoundConfigFile,
-} from '../../lib/soundConfigGenerator';
-import {
-    checkSoundConfigUsage,
-    ConfigCheckResult,
-    formatCheckResults,
-} from '../../lib/soundConfigChecker';
+    detectGameContextFromOpenScene,
+    formatSceneContextHint,
+} from '../../lib/openSceneContext';
 import {
     formatNodeHint,
     getSelectedNodeUuid,
     querySceneNode,
 } from '../../lib/sceneNode';
 import { formatSetupSfxListHtml, setupSfxListOnNode } from '../../lib/setupSfxList';
+import {
+    ConfigCheckResult,
+    checkSoundConfigUsage,
+    formatCheckResults,
+} from '../../lib/soundConfigChecker';
+import {
+    formatGenerateConfigHtml,
+    generateSoundConfigContent,
+    getSoundListKeysFromNode,
+    writeSoundConfigFile,
+} from '../../lib/soundConfigGenerator';
 
 function getInputValue(el: HTMLElement | null): string {
     return ((el as HTMLInputElement | null)?.value ?? '').trim();
@@ -31,6 +35,13 @@ function getInputValue(el: HTMLElement | null): string {
 
 function getCheckboxValue(el: HTMLElement | null): boolean {
     return (el as HTMLElement & { value?: boolean } | null)?.value !== false;
+}
+
+function setInputValue(el: HTMLElement | null, value: string): void {
+    if (!el) {
+        return;
+    }
+    (el as HTMLInputElement).value = value;
 }
 
 function formatCheckResultsHtml(results: ConfigCheckResult[]): string {
@@ -50,7 +61,9 @@ function formatCheckResultsHtml(results: ConfigCheckResult[]): string {
 
 module.exports = Editor.Panel.define({
     listeners: {
-        show() {},
+        show() {
+            void (this as any).applyOpenSceneContext();
+        },
         hide() {},
     },
     template: readFileSync(join(__dirname, '../../../static/template/default/index.html'), 'utf-8'),
@@ -60,6 +73,8 @@ module.exports = Editor.Panel.define({
         folder: '#folder',
         soundNode: '#soundNode',
         soundNodeHint: '#soundNodeHint',
+        sceneDetectHint: '#sceneDetectHint',
+        btnSyncScene: '#btnSyncScene',
         sfxFolder: '#sfxFolder',
         preserveBgm: '#preserveBgm',
         btnPickNode: '#btnPickNode',
@@ -72,6 +87,32 @@ module.exports = Editor.Panel.define({
     methods: {
         getSoundNodeUuid(this: any): string | undefined {
             return (this.$.soundNode as HTMLElement & { value?: string })?.value || undefined;
+        },
+        async applyOpenSceneContext(this: any): Promise<boolean> {
+            const hint = this.$.sceneDetectHint as HTMLElement | null;
+            try {
+                const ctx = await detectGameContextFromOpenScene();
+                if (!ctx) {
+                    if (hint) {
+                        hint.textContent = 'No open scene detected (open a .scene under assets/).';
+                    }
+                    return false;
+                }
+
+                setInputValue(this.$.gameID, ctx.gameId);
+                setInputValue(this.$.folder, ctx.projectPath);
+                if (hint) {
+                    hint.textContent = formatSceneContextHint(ctx);
+                }
+                console.log('[sound-setup] Detected from open scene', ctx);
+                return true;
+            } catch (err) {
+                if (hint) {
+                    hint.textContent = '';
+                }
+                console.warn('[sound-setup] scene context detection failed', err);
+                return false;
+            }
         },
         async refreshSoundNodeHint(this: any): Promise<void> {
             const hint = this.$.soundNodeHint as HTMLElement | null;
@@ -217,18 +258,35 @@ module.exports = Editor.Panel.define({
     },
     ready() {
         const $ = this.$;
+        const panel = this as any;
+        const onSceneContextChange = () => {
+            void panel.applyOpenSceneContext();
+        };
+        panel._onSceneReady = onSceneContextChange;
+
         $.btnSetupSfx?.addEventListener('confirm', () => this.setupSfxList());
         $.btnGenerate?.addEventListener('confirm', () => this.generateConfig());
         $.btnCheck?.addEventListener('confirm', () => this.checkUsage());
         $.btnClear?.addEventListener('confirm', () => this.clearResults());
         $.btnPickNode?.addEventListener('confirm', () => this.pickSoundNodeFromSelection());
+        $.btnSyncScene?.addEventListener('confirm', () => this.applyOpenSceneContext());
         $.soundNode?.addEventListener('change', () => this.refreshSoundNodeHint());
         $.soundNode?.addEventListener('confirm', () => this.refreshSoundNodeHint());
         if ($.results) {
-            $.results.innerHTML = '<span class="info">Select folders and run Generate or Check usage.</span>';
+            $.results.innerHTML = '<span class="info">Open a game scene to auto-fill Game ID and Project path.</span>';
         }
+
+        Editor.Message.addBroadcastListener('scene:ready', onSceneContextChange);
+
+        void this.applyOpenSceneContext();
         void this.refreshSoundNodeHint();
     },
-    beforeClose() {},
+    beforeClose() {
+        const panel = this as any;
+        if (panel._onSceneReady) {
+            Editor.Message.removeBroadcastListener('scene:ready', panel._onSceneReady);
+            panel._onSceneReady = null;
+        }
+    },
     close() {},
 });
