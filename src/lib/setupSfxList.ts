@@ -9,6 +9,12 @@ export interface SfxListEntry {
 export interface SfxListItemDetail {
     fileName: string;
     soundId: string;
+    reason?: string;
+}
+
+export interface ExistingSfxKeys {
+    soundIds: Set<string>;
+    clipUuids: Set<string>;
 }
 
 export interface SetupSfxListResult {
@@ -31,33 +37,69 @@ export function buildSfxEntriesFromFolder(
     }));
 }
 
+function getSkipReason(
+    soundId: string,
+    clipUuid: string,
+    existing: ExistingSfxKeys,
+): string | null {
+    const duplicateSoundId = existing.soundIds.has(soundId);
+    const duplicateClip = existing.clipUuids.has(clipUuid);
+    if (duplicateSoundId && duplicateClip) {
+        return 'duplicate soundId and audioFile';
+    }
+    if (duplicateSoundId) {
+        return 'duplicate soundId';
+    }
+    if (duplicateClip) {
+        return 'duplicate audioFile';
+    }
+    return null;
+}
+
 function partitionEntries(
     entries: SfxListEntry[],
-    existingIds: Set<string>,
+    existing: ExistingSfxKeys,
 ): { addedItems: SfxListItemDetail[]; skippedItems: SfxListItemDetail[] } {
     const addedItems: SfxListItemDetail[] = [];
     const skippedItems: SfxListItemDetail[] = [];
+    const pending: ExistingSfxKeys = {
+        soundIds: new Set(existing.soundIds),
+        clipUuids: new Set(existing.clipUuids),
+    };
 
     for (const entry of entries) {
         const soundId = entry.soundId.toUpperCase();
-        const detail = { fileName: entry.fileName, soundId };
-        if (existingIds.has(soundId)) {
-            skippedItems.push(detail);
-        } else {
-            addedItems.push(detail);
+        const clipUuid = entry.clipUuid.trim();
+        const detail: SfxListItemDetail = { fileName: entry.fileName, soundId };
+
+        const skipReason = getSkipReason(soundId, clipUuid, pending);
+        if (skipReason) {
+            skippedItems.push({ ...detail, reason: skipReason });
+            continue;
         }
+
+        pending.soundIds.add(soundId);
+        pending.clipUuids.add(clipUuid);
+        addedItems.push(detail);
     }
 
     return { addedItems, skippedItems };
 }
 
-async function getExistingSfxSoundIds(nodeUuid: string): Promise<string[]> {
-    const ids = await Editor.Message.request('scene', 'execute-scene-script', {
+async function getExistingSfxKeys(nodeUuid: string): Promise<ExistingSfxKeys> {
+    const raw = await Editor.Message.request('scene', 'execute-scene-script', {
         name: 'sound-setup',
-        method: 'getExistingSfxSoundIds',
+        method: 'getExistingSfxKeys',
         args: [nodeUuid],
     });
-    return Array.isArray(ids) ? ids.map((id) => String(id).toUpperCase()) : [];
+
+    const data = (raw ?? {}) as { soundIds?: string[]; clipUuids?: string[] };
+    return {
+        soundIds: new Set(
+            Array.isArray(data.soundIds) ? data.soundIds.map((id) => id.toUpperCase()) : [],
+        ),
+        clipUuids: new Set(Array.isArray(data.clipUuids) ? data.clipUuids : []),
+    };
 }
 
 function normalizeSetupResult(
@@ -94,7 +136,8 @@ export function formatSetupSfxListHtml(result: SetupSfxListResult): string {
     if (skippedItems.length) {
         lines.push('<div class="section-title">Skipped (already in list)</div>');
         for (const item of skippedItems) {
-            lines.push(`<div class="warn">− ${item.fileName} → ${item.soundId}</div>`);
+            const reason = item.reason ? ` (${item.reason})` : '';
+            lines.push(`<div class="warn">− ${item.fileName} → ${item.soundId}${reason}</div>`);
         }
     }
 
@@ -112,8 +155,8 @@ export async function setupSfxListOnNode(
     }
 
     const entries = buildSfxEntriesFromFolder(clips, gameId);
-    const existingIds = new Set(await getExistingSfxSoundIds(nodeUuid));
-    const { addedItems, skippedItems } = partitionEntries(entries, existingIds);
+    const existing = await getExistingSfxKeys(nodeUuid);
+    const { addedItems, skippedItems } = partitionEntries(entries, existing);
 
     const raw = await Editor.Message.request('scene', 'execute-scene-script', {
         name: 'sound-setup',

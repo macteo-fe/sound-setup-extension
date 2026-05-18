@@ -123,7 +123,8 @@ module.exports = Editor.Panel.define({
                     console.log(`[sound-setup] + ${item.fileName} → ${item.soundId}`);
                 }
                 for (const item of result.skippedItems ?? []) {
-                    console.log(`[sound-setup] − ${item.fileName} → ${item.soundId} (skipped)`);
+                    const reason = item.reason ? ` (${item.reason})` : '';
+                    console.log(`[sound-setup] − ${item.fileName} → ${item.soundId}${reason}`);
                 }
             } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);

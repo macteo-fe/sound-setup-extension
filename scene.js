@@ -71,12 +71,52 @@ async function loadAudioClipByUuid(uuid) {
     });
 }
 
+function getAudioClipUuid(audioFile) {
+    if (!audioFile) {
+        return '';
+    }
+    return String(audioFile._uuid || audioFile.uuid || '').trim();
+}
+
+function collectExistingSfxKeys(existingList) {
+    const soundIds = new Set();
+    const clipUuids = new Set();
+
+    for (const item of existingList) {
+        const soundId = String(item.soundId || '').toUpperCase();
+        if (soundId) {
+            soundIds.add(soundId);
+        }
+        const clipUuid = getAudioClipUuid(item.audioFile);
+        if (clipUuid) {
+            clipUuids.add(clipUuid);
+        }
+    }
+
+    return { soundIds, clipUuids };
+}
+
+function getSkipReason(soundId, clipUuid, soundIds, clipUuids) {
+    const duplicateSoundId = soundIds.has(soundId);
+    const duplicateClip = clipUuids.has(clipUuid);
+    if (duplicateSoundId && duplicateClip) {
+        return 'duplicate soundId and audioFile';
+    }
+    if (duplicateSoundId) {
+        return 'duplicate soundId';
+    }
+    if (duplicateClip) {
+        return 'duplicate audioFile';
+    }
+    return '';
+}
+
 exports.methods = {
     /**
      * @param {string} nodeUuid
-     * @returns {string[]}
+     * @returns {{ soundIds: string[], clipUuids: string[] }}
      */
-    getExistingSfxSoundIds(nodeUuid) {
+    getExistingSfxKeys(nodeUuid) {
         const scene = director.getScene();
         if (!scene) {
             throw new Error('No active scene');
@@ -93,9 +133,11 @@ exports.methods = {
         }
 
         const existingList = Array.isArray(soundComp.sfxList) ? soundComp.sfxList : [];
-        return existingList
-            .map((m) => String(m.soundId || '').toUpperCase())
-            .filter(Boolean);
+        const { soundIds, clipUuids } = collectExistingSfxKeys(existingList);
+        return {
+            soundIds: [...soundIds],
+            clipUuids: [...clipUuids],
+        };
     },
 
     /**
@@ -120,9 +162,7 @@ exports.methods = {
 
         const CustomAudioClipModuleKlass = getClass('CustomAudioClipModule');
         const existingList = Array.isArray(soundComp.sfxList) ? [...soundComp.sfxList] : [];
-        const existingIds = new Set(
-            existingList.map((m) => String(m.soundId || '').toUpperCase()).filter(Boolean),
-        );
+        const { soundIds, clipUuids } = collectExistingSfxKeys(existingList);
 
         let added = 0;
         let skipped = 0;
@@ -131,23 +171,27 @@ exports.methods = {
 
         for (const entry of entries || []) {
             const soundId = String(entry.soundId || '').toUpperCase();
+            const clipUuid = String(entry.clipUuid || '').trim();
             const fileName = String(entry.fileName || entry.file || soundId);
-            if (!soundId || !entry.clipUuid) {
-                continue;
-            }
-            if (existingIds.has(soundId)) {
-                skipped += 1;
-                skippedItems.push({ fileName, soundId });
+            if (!soundId || !clipUuid) {
                 continue;
             }
 
-            const clip = await loadAudioClipByUuid(entry.clipUuid);
+            const skipReason = getSkipReason(soundId, clipUuid, soundIds, clipUuids);
+            if (skipReason) {
+                skipped += 1;
+                skippedItems.push({ fileName, soundId, reason: skipReason });
+                continue;
+            }
+
+            const clip = await loadAudioClipByUuid(clipUuid);
             const mod = new CustomAudioClipModuleKlass();
             mod.isEffect = true;
             mod.soundId = soundId;
             mod.audioFile = clip;
             existingList.push(mod);
-            existingIds.add(soundId);
+            soundIds.add(soundId);
+            clipUuids.add(clipUuid);
             added += 1;
             addedItems.push({ fileName, soundId });
         }

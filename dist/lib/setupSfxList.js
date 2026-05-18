@@ -10,28 +10,53 @@ function buildSfxEntriesFromFolder(clips, gameId) {
     }));
 }
 exports.buildSfxEntriesFromFolder = buildSfxEntriesFromFolder;
-function partitionEntries(entries, existingIds) {
+function getSkipReason(soundId, clipUuid, existing) {
+    const duplicateSoundId = existing.soundIds.has(soundId);
+    const duplicateClip = existing.clipUuids.has(clipUuid);
+    if (duplicateSoundId && duplicateClip) {
+        return 'duplicate soundId and audioFile';
+    }
+    if (duplicateSoundId) {
+        return 'duplicate soundId';
+    }
+    if (duplicateClip) {
+        return 'duplicate audioFile';
+    }
+    return null;
+}
+function partitionEntries(entries, existing) {
     const addedItems = [];
     const skippedItems = [];
+    const pending = {
+        soundIds: new Set(existing.soundIds),
+        clipUuids: new Set(existing.clipUuids),
+    };
     for (const entry of entries) {
         const soundId = entry.soundId.toUpperCase();
+        const clipUuid = entry.clipUuid.trim();
         const detail = { fileName: entry.fileName, soundId };
-        if (existingIds.has(soundId)) {
-            skippedItems.push(detail);
+        const skipReason = getSkipReason(soundId, clipUuid, pending);
+        if (skipReason) {
+            skippedItems.push(Object.assign(Object.assign({}, detail), { reason: skipReason }));
+            continue;
         }
-        else {
-            addedItems.push(detail);
-        }
+        pending.soundIds.add(soundId);
+        pending.clipUuids.add(clipUuid);
+        addedItems.push(detail);
     }
     return { addedItems, skippedItems };
 }
-async function getExistingSfxSoundIds(nodeUuid) {
-    const ids = await Editor.Message.request('scene', 'execute-scene-script', {
+async function getExistingSfxKeys(nodeUuid) {
+    const raw = await Editor.Message.request('scene', 'execute-scene-script', {
         name: 'sound-setup',
-        method: 'getExistingSfxSoundIds',
+        method: 'getExistingSfxKeys',
         args: [nodeUuid],
     });
-    return Array.isArray(ids) ? ids.map((id) => String(id).toUpperCase()) : [];
+    const data = (raw !== null && raw !== void 0 ? raw : {});
+    return {
+        soundIds: new Set(Array.isArray(data.soundIds) ? data.soundIds.map((id) => id.toUpperCase()) : []),
+        clipUuids: new Set(Array.isArray(data.clipUuids) ? data.clipUuids : []),
+    };
 }
 function normalizeSetupResult(raw, addedItems, skippedItems) {
     return {
@@ -60,7 +85,8 @@ function formatSetupSfxListHtml(result) {
     if (skippedItems.length) {
         lines.push('<div class="section-title">Skipped (already in list)</div>');
         for (const item of skippedItems) {
-            lines.push(`<motion.div class="warn">− ${item.fileName} → ${item.soundId}</div>`);
+            const reason = item.reason ? ` (${item.reason})` : '';
+            lines.push(`<div class="warn">− ${item.fileName} → ${item.soundId}${reason}</div>`);
         }
     }
     return lines.join('');
@@ -72,8 +98,8 @@ async function setupSfxListOnNode(nodeUuid, sfxFolderUuid, gameId) {
         throw new Error('No mp3 AudioClip assets found in SFX folder.');
     }
     const entries = buildSfxEntriesFromFolder(clips, gameId);
-    const existingIds = new Set(await getExistingSfxSoundIds(nodeUuid));
-    const { addedItems, skippedItems } = partitionEntries(entries, existingIds);
+    const existing = await getExistingSfxKeys(nodeUuid);
+    const { addedItems, skippedItems } = partitionEntries(entries, existing);
     const raw = await Editor.Message.request('scene', 'execute-scene-script', {
         name: 'sound-setup',
         method: 'setupSfxList',
