@@ -180,7 +180,7 @@ function isKeyUsed(
 
 async function readAllScriptCode(scriptsDir: string, configFileName: string): Promise<string> {
     let allCode = '';
-    const walk = async (dir: string) => {
+    const walk = async (dir: string): Promise<void> => {
         const entries = await fs.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
             const fullPath = path.join(dir, entry.name);
