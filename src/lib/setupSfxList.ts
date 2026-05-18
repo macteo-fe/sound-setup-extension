@@ -1,4 +1,5 @@
-import { filenameToSoundKey, queryAudioClipsInFolder } from './editorAsset';
+import { filenameToSoundKey, normalizeSoundId, queryAudioClipsInFolder } from './editorAsset';
+import { getExistingSfxKeysFromEditorDump } from './soundListFromNode';
 
 export interface SfxListEntry {
     soundId: string;
@@ -68,7 +69,7 @@ function partitionEntries(
     };
 
     for (const entry of entries) {
-        const soundId = entry.soundId.toUpperCase();
+        const soundId = normalizeSoundId(entry.soundId);
         const clipUuid = entry.clipUuid.trim();
         const detail: SfxListItemDetail = { fileName: entry.fileName, soundId };
 
@@ -86,7 +87,7 @@ function partitionEntries(
     return { addedItems, skippedItems };
 }
 
-async function getExistingSfxKeys(nodeUuid: string): Promise<ExistingSfxKeys> {
+async function getExistingSfxKeysFromScene(nodeUuid: string): Promise<ExistingSfxKeys> {
     const raw = await Editor.Message.request('scene', 'execute-scene-script', {
         name: 'sound-setup',
         method: 'getExistingSfxKeys',
@@ -96,10 +97,22 @@ async function getExistingSfxKeys(nodeUuid: string): Promise<ExistingSfxKeys> {
     const data = (raw ?? {}) as { soundIds?: string[]; clipUuids?: string[] };
     return {
         soundIds: new Set(
-            Array.isArray(data.soundIds) ? data.soundIds.map((id) => id.toUpperCase()) : [],
+            Array.isArray(data.soundIds) ? data.soundIds.map((id) => normalizeSoundId(id)) : [],
         ),
         clipUuids: new Set(Array.isArray(data.clipUuids) ? data.clipUuids : []),
     };
+}
+
+async function getExistingSfxKeys(nodeUuid: string): Promise<ExistingSfxKeys> {
+    const fromEditor = await getExistingSfxKeysFromEditorDump(nodeUuid);
+    if (fromEditor && (fromEditor.soundIds.size || fromEditor.clipUuids.size)) {
+        return fromEditor;
+    }
+    try {
+        return await getExistingSfxKeysFromScene(nodeUuid);
+    } catch {
+        return fromEditor ?? { soundIds: new Set(), clipUuids: new Set() };
+    }
 }
 
 function normalizeSetupResult(

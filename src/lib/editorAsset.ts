@@ -23,17 +23,22 @@ export async function queryAudioClipsInFolder(folderUuid: string): Promise<{ nam
         .map((a: { name: string; uuid: string }) => ({ name: a.name, uuid: a.uuid }));
 }
 
+/** Uppercase sound id with all whitespace removed. */
+export function normalizeSoundId(id: string): string {
+    return String(id || '').replace(/\s+/g, '').toUpperCase();
+}
+
 export function filenameToSoundKey(filename: string, gameId: string): string {
     const base = filename.replace(/\.[^.]+$/, '');
     const prefix = `${gameId}_`;
+    let key: string;
     if (base.startsWith(prefix)) {
-        return base.slice(prefix.length).toUpperCase();
+        key = base.slice(prefix.length);
+    } else {
+        const underscore = base.indexOf('_');
+        key = underscore >= 0 ? base.slice(underscore + 1) : base;
     }
-    const underscore = base.indexOf('_');
-    if (underscore >= 0) {
-        return base.slice(underscore + 1).toUpperCase();
-    }
-    return base.toUpperCase();
+    return normalizeSoundId(key);
 }
 
 export function getConfigDbUrl(projectPath: string, gameId: string): string {

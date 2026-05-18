@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getScriptsFsDir = exports.getConfigFsPath = exports.getConfigDbUrl = exports.filenameToSoundKey = exports.queryAudioClipsInFolder = exports.getPathByUuid = void 0;
+exports.getScriptsFsDir = exports.getConfigFsPath = exports.getConfigDbUrl = exports.filenameToSoundKey = exports.normalizeSoundId = exports.queryAudioClipsInFolder = exports.getPathByUuid = void 0;
 const path = __importStar(require("path"));
 async function getPathByUuid(uuid) {
     const result = await Editor.Message.request('asset-db', 'query-path', uuid);
@@ -47,17 +47,23 @@ async function queryAudioClipsInFolder(folderUuid) {
         .map((a) => ({ name: a.name, uuid: a.uuid }));
 }
 exports.queryAudioClipsInFolder = queryAudioClipsInFolder;
+/** Uppercase sound id with all whitespace removed. */
+function normalizeSoundId(id) {
+    return String(id || '').replace(/\s+/g, '').toUpperCase();
+}
+exports.normalizeSoundId = normalizeSoundId;
 function filenameToSoundKey(filename, gameId) {
     const base = filename.replace(/\.[^.]+$/, '');
     const prefix = `${gameId}_`;
+    let key;
     if (base.startsWith(prefix)) {
-        return base.slice(prefix.length).toUpperCase();
+        key = base.slice(prefix.length);
     }
-    const underscore = base.indexOf('_');
-    if (underscore >= 0) {
-        return base.slice(underscore + 1).toUpperCase();
+    else {
+        const underscore = base.indexOf('_');
+        key = underscore >= 0 ? base.slice(underscore + 1) : base;
     }
-    return base.toUpperCase();
+    return normalizeSoundId(key);
 }
 exports.filenameToSoundKey = filenameToSoundKey;
 function getConfigDbUrl(projectPath, gameId) {

@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.setupSfxListOnNode = exports.formatSetupSfxListHtml = exports.buildSfxEntriesFromFolder = void 0;
 const editorAsset_1 = require("./editorAsset");
+const soundListFromNode_1 = require("./soundListFromNode");
 function buildSfxEntriesFromFolder(clips, gameId) {
     return clips.map((clip) => ({
         soundId: (0, editorAsset_1.filenameToSoundKey)(clip.name, gameId),
@@ -32,7 +33,7 @@ function partitionEntries(entries, existing) {
         clipUuids: new Set(existing.clipUuids),
     };
     for (const entry of entries) {
-        const soundId = entry.soundId.toUpperCase();
+        const soundId = (0, editorAsset_1.normalizeSoundId)(entry.soundId);
         const clipUuid = entry.clipUuid.trim();
         const detail = { fileName: entry.fileName, soundId };
         const skipReason = getSkipReason(soundId, clipUuid, pending);
@@ -46,7 +47,7 @@ function partitionEntries(entries, existing) {
     }
     return { addedItems, skippedItems };
 }
-async function getExistingSfxKeys(nodeUuid) {
+async function getExistingSfxKeysFromScene(nodeUuid) {
     const raw = await Editor.Message.request('scene', 'execute-scene-script', {
         name: 'sound-setup',
         method: 'getExistingSfxKeys',
@@ -54,9 +55,21 @@ async function getExistingSfxKeys(nodeUuid) {
     });
     const data = (raw !== null && raw !== void 0 ? raw : {});
     return {
-        soundIds: new Set(Array.isArray(data.soundIds) ? data.soundIds.map((id) => id.toUpperCase()) : []),
+        soundIds: new Set(Array.isArray(data.soundIds) ? data.soundIds.map((id) => (0, editorAsset_1.normalizeSoundId)(id)) : []),
         clipUuids: new Set(Array.isArray(data.clipUuids) ? data.clipUuids : []),
     };
+}
+async function getExistingSfxKeys(nodeUuid) {
+    const fromEditor = await (0, soundListFromNode_1.getExistingSfxKeysFromEditorDump)(nodeUuid);
+    if (fromEditor && (fromEditor.soundIds.size || fromEditor.clipUuids.size)) {
+        return fromEditor;
+    }
+    try {
+        return await getExistingSfxKeysFromScene(nodeUuid);
+    }
+    catch (_a) {
+        return fromEditor !== null && fromEditor !== void 0 ? fromEditor : { soundIds: new Set(), clipUuids: new Set() };
+    }
 }
 function normalizeSetupResult(raw, addedItems, skippedItems) {
     return {

@@ -1,7 +1,7 @@
 <div class="panel-root">
     <div class="header">
         <h2 class="title">Sound Setup</h2>
-        <p class="subtitle">Generate SoundConfig and validate usage in game scripts</p>
+        <p class="subtitle">Setup SFX from folder · Generate SoundConfig from sound node sfxList</p>
     </div>
 
     <div class="input-section">
@@ -23,12 +23,8 @@
             <span class="scan-label">SFX folder</span>
             <ui-asset id="sfxFolder" droppable="cc.Asset" placeholder="Drag SFX folder (mp3)"></ui-asset>
         </div>
-        <div class="scan-input">
-            <span class="scan-label">BGM folder</span>
-            <ui-asset id="bgmFolder" droppable="cc.Asset" placeholder="Optional BGM folder (mp3)"></ui-asset>
-        </div>
         <div class="scan-input checkbox-row">
-            <ui-checkbox id="preserveBgm" checked>Preserve existing BGM_CONFIG when regenerating</ui-checkbox>
+            <ui-checkbox id="preserveBgm" checked>Preserve existing BGM_CONFIG when musicList is empty</ui-checkbox>
         </div>
     </div>
 

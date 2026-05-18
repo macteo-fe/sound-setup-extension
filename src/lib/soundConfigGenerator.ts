@@ -1,6 +1,12 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
-import { filenameToSoundKey } from './editorAsset';
+import { normalizeSoundId } from './editorAsset';
+
+export interface SoundListKeys {
+    sfxSoundIds: string[];
+    musicSoundIds: string[];
+    nodeName?: string;
+}
 
 function buildConfigBlock(name: string, keys: string[]): string {
     const lines = [`export const ${name} = {`];
@@ -17,16 +23,15 @@ export function extractConfigBlock(source: string, blockName: string): string | 
 }
 
 export function generateSoundConfigContent(options: {
-    gameId: string;
-    sfxFiles: string[];
-    bgmFiles: string[];
+    sfxSoundIds: string[];
+    musicSoundIds?: string[];
     preserveBgm: boolean;
     existingContent?: string;
 }): string {
-    const { gameId, sfxFiles, bgmFiles, preserveBgm, existingContent } = options;
+    const { sfxSoundIds, musicSoundIds = [], preserveBgm, existingContent } = options;
 
-    const sfxKeys = [...new Set(sfxFiles.map((f) => filenameToSoundKey(f, gameId)))].sort();
-    const bgmKeys = [...new Set(bgmFiles.map((f) => filenameToSoundKey(f, gameId)))].sort();
+    const sfxKeys = [...new Set(sfxSoundIds.map((id) => normalizeSoundId(id)))].filter(Boolean).sort();
+    const bgmKeys = [...new Set(musicSoundIds.map((id) => normalizeSoundId(id)))].filter(Boolean).sort();
 
     const parts: string[] = [buildConfigBlock('SOUND_CONFIG', sfxKeys)];
 
@@ -42,6 +47,35 @@ export function generateSoundConfigContent(options: {
     }
 
     return `${parts.join('\n')}\n`;
+}
+
+export { getSoundListKeysFromNode } from './soundListFromNode';
+
+export function formatGenerateConfigHtml(
+    configPath: string,
+    lists: SoundListKeys,
+    preserveBgm: boolean,
+): string {
+    const lines: string[] = [
+        `<div class="ok">Generated ${configPath}</div>`,
+        `<div class="info">From node: ${lists.nodeName || 'sound node'} — SFX: ${lists.sfxSoundIds.length}, BGM: ${lists.musicSoundIds.length}${preserveBgm && !lists.musicSoundIds.length ? ' (BGM preserved from file)' : ''}</div>`,
+    ];
+
+    if (lists.sfxSoundIds.length) {
+        lines.push('<div class="section-title">SOUND_CONFIG keys</div>');
+        for (const id of lists.sfxSoundIds) {
+            lines.push(`<div class="ok">${id}</div>`);
+        }
+    }
+
+    if (lists.musicSoundIds.length) {
+        lines.push('<div class="section-title">BGM_CONFIG keys</div>');
+        for (const id of lists.musicSoundIds) {
+            lines.push(`<div class="info">${id}</div>`);
+        }
+    }
+
+    return lines.join('');
 }
 
 export async function writeSoundConfigFile(fsPath: string, content: string): Promise<void> {

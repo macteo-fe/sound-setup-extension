@@ -65,7 +65,6 @@ module.exports = Editor.Panel.define({
         soundNode: '#soundNode',
         soundNodeHint: '#soundNodeHint',
         sfxFolder: '#sfxFolder',
-        bgmFolder: '#bgmFolder',
         preserveBgm: '#preserveBgm',
         btnPickNode: '#btnPickNode',
         btnSetupSfx: '#btnSetupSfx',
@@ -143,44 +142,39 @@ module.exports = Editor.Panel.define({
             }
         },
         async generateConfig() {
-            var _a, _b;
             const gameId = getInputValue(this.$.gameID);
             const projectPath = getInputValue(this.$.folder);
-            const sfxUuid = (_a = this.$.sfxFolder) === null || _a === void 0 ? void 0 : _a.value;
-            const bgmUuid = (_b = this.$.bgmFolder) === null || _b === void 0 ? void 0 : _b.value;
+            const nodeUuid = this.getSoundNodeUuid();
             const preserveBgm = getCheckboxValue(this.$.preserveBgm);
             if (!gameId || !projectPath) {
                 this.logError('Game ID and project path are required.');
                 return;
             }
-            if (!sfxUuid) {
-                this.logError('Select an SFX folder with mp3 files.');
+            if (!nodeUuid) {
+                this.logError('Assign a sound node with sfxList.');
                 return;
             }
             try {
-                const sfxClips = await (0, editorAsset_1.queryAudioClipsInFolder)(sfxUuid);
-                const bgmClips = bgmUuid ? await (0, editorAsset_1.queryAudioClipsInFolder)(bgmUuid) : [];
-                if (!sfxClips.length) {
-                    this.$.results.innerHTML = '<div class="warn">No mp3 AudioClip assets found in SFX folder.</div>';
+                const lists = await (0, soundConfigGenerator_1.getSoundListKeysFromNode)(nodeUuid);
+                if (!lists.sfxSoundIds.length) {
+                    this.logError('sfxList is empty on the sound node. Run Setup SFX list first.');
+                    return;
                 }
                 const configFsPath = (0, editorAsset_1.getConfigFsPath)(projectPath, gameId);
                 const existingContent = (await fs.pathExists(configFsPath))
                     ? await fs.readFile(configFsPath, 'utf-8')
                     : undefined;
                 const content = (0, soundConfigGenerator_1.generateSoundConfigContent)({
-                    gameId,
-                    sfxFiles: sfxClips.map((c) => c.name),
-                    bgmFiles: bgmClips.map((c) => c.name),
+                    sfxSoundIds: lists.sfxSoundIds,
+                    musicSoundIds: lists.musicSoundIds,
                     preserveBgm,
                     existingContent,
                 });
                 await (0, soundConfigGenerator_1.writeSoundConfigFile)(configFsPath, content);
                 const dbUrl = (0, editorAsset_1.getConfigDbUrl)(projectPath, gameId);
                 await Editor.Message.request('asset-db', 'refresh-asset', dbUrl);
-                this.$.results.innerHTML =
-                    `<div class="ok">Generated ${configFsPath}</div>` +
-                        `<div class="info">SFX keys: ${sfxClips.length}, BGM keys: ${bgmClips.length}</div>`;
-                console.log('[sound-setup] Generated SoundConfig', configFsPath);
+                this.$.results.innerHTML = (0, soundConfigGenerator_1.formatGenerateConfigHtml)(configFsPath, lists, preserveBgm);
+                console.log('[sound-setup] Generated SoundConfig from sfxList', lists);
             }
             catch (err) {
                 const message = err instanceof Error ? err.message : String(err);

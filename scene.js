@@ -34,15 +34,41 @@ function findNodeByUuid(scene, uuid) {
     return found;
 }
 
-function getSoundPlayerComponent(node) {
+function isSoundPlayerClassName(name) {
+    if (!name) {
+        return false;
+    }
+    if (SOUND_PLAYER_CLASS_NAMES.includes(name)) {
+        return true;
+    }
+    return name.startsWith('SlotSoundPlayerModule');
+}
+
+function getSoundPlayerComponentOnNode(node) {
     const components = node.components || [];
     for (const comp of components) {
         const name = js.getClassName(comp.constructor);
-        if (SOUND_PLAYER_CLASS_NAMES.includes(name)) {
+        if (isSoundPlayerClassName(name)) {
             return comp;
         }
-        if (name && name.startsWith('SlotSoundPlayerModule')) {
+    }
+    return null;
+}
+
+function getSoundPlayerComponent(node) {
+    const onSelf = getSoundPlayerComponentOnNode(node);
+    if (onSelf) {
+        return onSelf;
+    }
+    const stack = [...(node.children || [])];
+    while (stack.length) {
+        const child = stack.pop();
+        const comp = getSoundPlayerComponentOnNode(child);
+        if (comp) {
             return comp;
+        }
+        if (child.children?.length) {
+            stack.push(...child.children);
         }
     }
     return null;
@@ -71,6 +97,10 @@ async function loadAudioClipByUuid(uuid) {
     });
 }
 
+function normalizeSoundId(id) {
+    return String(id || '').replace(/\s+/g, '').toUpperCase();
+}
+
 function getAudioClipUuid(audioFile) {
     if (!audioFile) {
         return '';
@@ -78,12 +108,23 @@ function getAudioClipUuid(audioFile) {
     return String(audioFile._uuid || audioFile.uuid || '').trim();
 }
 
+function collectSoundIdsFromList(list) {
+    const ids = [];
+    for (const item of list || []) {
+        const soundId = normalizeSoundId(item.soundId);
+        if (soundId) {
+            ids.push(soundId);
+        }
+    }
+    return ids;
+}
+
 function collectExistingSfxKeys(existingList) {
     const soundIds = new Set();
     const clipUuids = new Set();
 
     for (const item of existingList) {
-        const soundId = String(item.soundId || '').toUpperCase();
+        const soundId = normalizeSoundId(item.soundId);
         if (soundId) {
             soundIds.add(soundId);
         }
@@ -94,6 +135,25 @@ function collectExistingSfxKeys(existingList) {
     }
 
     return { soundIds, clipUuids };
+}
+
+function resolveSoundPlayerOnNode(nodeUuid) {
+    const scene = director.getScene();
+    if (!scene) {
+        throw new Error('No active scene');
+    }
+
+    const node = findNodeByUuid(scene, nodeUuid);
+    if (!node) {
+        throw new Error(`Node not found: ${nodeUuid}`);
+    }
+
+    const soundComp = getSoundPlayerComponent(node);
+    if (!soundComp) {
+        throw new Error('SoundPlayerModuleImpl (or subclass) not found on node');
+    }
+
+    return { node, soundComp };
 }
 
 function getSkipReason(soundId, clipUuid, soundIds, clipUuids) {
@@ -114,24 +174,25 @@ function getSkipReason(soundId, clipUuid, soundIds, clipUuids) {
 exports.methods = {
     /**
      * @param {string} nodeUuid
+     * @returns {{ sfxSoundIds: string[], musicSoundIds: string[], nodeName: string }}
+     */
+    getSoundListKeys(nodeUuid) {
+        const { node, soundComp } = resolveSoundPlayerOnNode(nodeUuid);
+        const sfxList = Array.isArray(soundComp.sfxList) ? soundComp.sfxList : [];
+        const musicList = Array.isArray(soundComp.musicList) ? soundComp.musicList : [];
+        return {
+            sfxSoundIds: collectSoundIdsFromList(sfxList),
+            musicSoundIds: collectSoundIdsFromList(musicList),
+            nodeName: node.name,
+        };
+    },
+
+    /**
+     * @param {string} nodeUuid
      * @returns {{ soundIds: string[], clipUuids: string[] }}
      */
     getExistingSfxKeys(nodeUuid) {
-        const scene = director.getScene();
-        if (!scene) {
-            throw new Error('No active scene');
-        }
-
-        const node = findNodeByUuid(scene, nodeUuid);
-        if (!node) {
-            throw new Error(`Node not found: ${nodeUuid}`);
-        }
-
-        const soundComp = getSoundPlayerComponent(node);
-        if (!soundComp) {
-            throw new Error('SoundPlayerModuleImpl (or subclass) not found on node');
-        }
-
+        const { soundComp } = resolveSoundPlayerOnNode(nodeUuid);
         const existingList = Array.isArray(soundComp.sfxList) ? soundComp.sfxList : [];
         const { soundIds, clipUuids } = collectExistingSfxKeys(existingList);
         return {
@@ -145,20 +206,7 @@ exports.methods = {
      * @param {{ soundId: string, clipUuid: string, fileName?: string }[]} entries
      */
     async setupSfxList(nodeUuid, entries) {
-        const scene = director.getScene();
-        if (!scene) {
-            throw new Error('No active scene');
-        }
-
-        const node = findNodeByUuid(scene, nodeUuid);
-        if (!node) {
-            throw new Error(`Node not found: ${nodeUuid}`);
-        }
-
-        const soundComp = getSoundPlayerComponent(node);
-        if (!soundComp) {
-            throw new Error('SoundPlayerModuleImpl (or subclass) not found on node');
-        }
+        const { node, soundComp } = resolveSoundPlayerOnNode(nodeUuid);
 
         const CustomAudioClipModuleKlass = getClass('CustomAudioClipModule');
         const existingList = Array.isArray(soundComp.sfxList) ? [...soundComp.sfxList] : [];
@@ -170,7 +218,7 @@ exports.methods = {
         const skippedItems = [];
 
         for (const entry of entries || []) {
-            const soundId = String(entry.soundId || '').toUpperCase();
+            const soundId = normalizeSoundId(entry.soundId);
             const clipUuid = String(entry.clipUuid || '').trim();
             const fileName = String(entry.fileName || entry.file || soundId);
             if (!soundId || !clipUuid) {
