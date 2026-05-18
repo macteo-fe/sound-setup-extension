@@ -1,0 +1,41 @@
+<div class="panel-root">
+    <div class="header">
+        <h2 class="title">Sound Setup</h2>
+        <p class="subtitle">Generate SoundConfig and validate usage in game scripts</p>
+    </div>
+
+    <div class="input-section">
+        <div class="scan-input">
+            <span class="scan-label">Game ID</span>
+            <ui-input id="gameID" value="9766"></ui-input>
+        </div>
+        <div class="scan-input">
+            <span class="scan-label">Project path</span>
+            <ui-input id="folder" value="cc-release-slot/cc30-nine-tailed-fox-9766"></ui-input>
+        </div>
+        <div class="scan-input">
+            <span class="scan-label">SFX folder</span>
+            <ui-asset id="sfxFolder" droppable="cc.Asset" placeholder="Drag SFX folder (mp3)"></ui-asset>
+        </div>
+        <div class="scan-input">
+            <span class="scan-label">BGM folder</span>
+            <ui-asset id="bgmFolder" droppable="cc.Asset" placeholder="Optional BGM folder (mp3)"></ui-asset>
+        </div>
+        <div class="scan-input checkbox-row">
+            <ui-checkbox id="preserveBgm" checked>Preserve existing BGM_CONFIG when regenerating</ui-checkbox>
+        </div>
+    </div>
+
+    <div class="main-controls">
+        <ui-button id="btnGenerate" class="primary">Generate SoundConfig</ui-button>
+        <ui-button id="btnCheck">Check usage</ui-button>
+    </div>
+
+    <div class="results-section">
+        <div class="results-header">
+            <span class="results-title">Results</span>
+            <ui-button id="btnClear" class="small">Clear</ui-button>
+        </div>
+        <div id="results" class="results-body"></div>
+    </div>
+</div>

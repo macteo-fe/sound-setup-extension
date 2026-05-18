@@ -1,0 +1,152 @@
+:host {
+    display: flex;
+    flex-direction: column;
+    padding: 8px;
+    background: #252525;
+    color: #eee;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    font-size: 13px;
+}
+
+.panel-root {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+}
+
+.header {
+    margin-bottom: 10px;
+    border-bottom: 1px solid #444;
+    padding-bottom: 8px;
+    flex-shrink: 0;
+}
+
+.title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #fff;
+    margin: 0 0 4px;
+}
+
+.subtitle {
+    margin: 0;
+    font-size: 11px;
+    color: #9ca3af;
+}
+
+.input-section {
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 4px;
+    padding: 8px;
+    margin-bottom: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    flex-shrink: 0;
+}
+
+.scan-input {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.scan-input:last-child {
+    margin-bottom: 0;
+}
+
+.checkbox-row {
+    align-items: flex-start;
+}
+
+.scan-label {
+    font-weight: 500;
+    min-width: 88px;
+    color: #ccc;
+    font-size: 12px;
+    flex-shrink: 0;
+}
+
+ui-input,
+ui-asset,
+ui-checkbox {
+    flex: 1;
+    min-width: 100px;
+}
+
+.main-controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+}
+
+.main-controls ui-button {
+    flex: 1;
+}
+
+.results-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #1e1e1e;
+    border-radius: 4px;
+    border: 1px solid #444;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.results-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    border-bottom: 1px solid #444;
+    flex-shrink: 0;
+}
+
+.results-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #e5e7eb;
+}
+
+.results-body {
+    flex: 1;
+    overflow: auto;
+    padding: 8px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.results-body .section-title {
+    color: #93c5fd;
+    margin: 8px 0 4px;
+    font-weight: 600;
+}
+
+.results-body .section-title:first-child {
+    margin-top: 0;
+}
+
+.results-body .ok {
+    color: #4ade80;
+}
+
+.results-body .unused {
+    color: #f87171;
+}
+
+.results-body .info {
+    color: #9ca3af;
+}
+
+.results-body .warn {
+    color: #fbbf24;
+}
