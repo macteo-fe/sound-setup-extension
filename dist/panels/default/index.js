@@ -23,15 +23,16 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const fs_extra_1 = require("fs-extra");
+/* eslint-disable @typescript-eslint/explicit-function-return-type */
 const fs = __importStar(require("fs-extra"));
+const fs_extra_1 = require("fs-extra");
 const path_1 = require("path");
 const editorAsset_1 = require("../../lib/editorAsset");
-const soundConfigGenerator_1 = require("../../lib/soundConfigGenerator");
-const soundConfigChecker_1 = require("../../lib/soundConfigChecker");
 const openSceneContext_1 = require("../../lib/openSceneContext");
 const sceneNode_1 = require("../../lib/sceneNode");
 const setupSfxList_1 = require("../../lib/setupSfxList");
+const soundConfigChecker_1 = require("../../lib/soundConfigChecker");
+const soundConfigGenerator_1 = require("../../lib/soundConfigGenerator");
 function getInputValue(el) {
     var _a;
     return ((_a = el === null || el === void 0 ? void 0 : el.value) !== null && _a !== void 0 ? _a : '').trim();
@@ -201,16 +202,16 @@ module.exports = Editor.Panel.define({
                 const existingContent = (await fs.pathExists(configFsPath))
                     ? await fs.readFile(configFsPath, 'utf-8')
                     : undefined;
-                const content = (0, soundConfigGenerator_1.generateSoundConfigContent)({
+                const generated = (0, soundConfigGenerator_1.generateSoundConfigContent)({
                     sfxSoundIds: lists.sfxSoundIds,
                     musicSoundIds: lists.musicSoundIds,
                     preserveBgm,
                     existingContent,
                 });
-                await (0, soundConfigGenerator_1.writeSoundConfigFile)(configFsPath, content);
+                await (0, soundConfigGenerator_1.writeSoundConfigFile)(configFsPath, generated.content);
                 const dbUrl = (0, editorAsset_1.getConfigDbUrl)(projectPath, gameId);
                 await Editor.Message.request('asset-db', 'refresh-asset', dbUrl);
-                this.$.results.innerHTML = (0, soundConfigGenerator_1.formatGenerateConfigHtml)(configFsPath, lists, preserveBgm);
+                this.$.results.innerHTML = (0, soundConfigGenerator_1.formatGenerateConfigHtml)(configFsPath, lists, preserveBgm, generated);
                 console.log('[sound-setup] Generated SoundConfig from sfxList', lists);
             }
             catch (err) {

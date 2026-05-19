@@ -28,7 +28,7 @@
     "contributions": {
         "menu": [
             {
-                "path": "i18n:menu.panel/sound-setup",
+                "path": "i18n:menu.extension",
                 "label": "i18n:sound-setup.open_panel",
                 "message": "open-panel"
             }

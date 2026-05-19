@@ -205,19 +205,24 @@ module.exports = Editor.Panel.define({
                     ? await fs.readFile(configFsPath, 'utf-8')
                     : undefined;
 
-                const content = generateSoundConfigContent({
+                const generated = generateSoundConfigContent({
                     sfxSoundIds: lists.sfxSoundIds,
                     musicSoundIds: lists.musicSoundIds,
                     preserveBgm,
                     existingContent,
                 });
 
-                await writeSoundConfigFile(configFsPath, content);
+                await writeSoundConfigFile(configFsPath, generated.content);
 
                 const dbUrl = getConfigDbUrl(projectPath, gameId);
                 await Editor.Message.request('asset-db', 'refresh-asset', dbUrl);
 
-                this.$.results.innerHTML = formatGenerateConfigHtml(configFsPath, lists, preserveBgm);
+                this.$.results.innerHTML = formatGenerateConfigHtml(
+                    configFsPath,
+                    lists,
+                    preserveBgm,
+                    generated,
+                );
                 console.log('[sound-setup] Generated SoundConfig from sfxList', lists);
             } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
