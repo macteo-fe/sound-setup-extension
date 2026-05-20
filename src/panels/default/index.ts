@@ -12,6 +12,7 @@ import {
     formatSceneContextHint,
 } from '../../lib/openSceneContext';
 import {
+    findSoundPlayerNodeInOpenScene,
     formatNodeHint,
     getSelectedNodeUuid,
     querySceneNode,
@@ -78,6 +79,7 @@ module.exports = Editor.Panel.define({
         sfxFolder: '#sfxFolder',
         preserveBgm: '#preserveBgm',
         btnPickNode: '#btnPickNode',
+        btnAutoSoundNode: '#btnAutoSoundNode',
         btnSetupSfx: '#btnSetupSfx',
         btnGenerate: '#btnGenerate',
         btnCheck: '#btnCheck',
@@ -88,6 +90,11 @@ module.exports = Editor.Panel.define({
         getSoundNodeUuid(this: any): string | undefined {
             return (this.$.soundNode as HTMLElement & { value?: string })?.value || undefined;
         },
+        async syncFromOpenScene(this: any): Promise<void> {
+            await this.applyOpenSceneContext();
+            await this.autoPickSoundNode({ force: false });
+        },
+
         async applyOpenSceneContext(this: any): Promise<boolean> {
             const hint = this.$.sceneDetectHint as HTMLElement | null;
             try {
@@ -138,6 +145,41 @@ module.exports = Editor.Panel.define({
                 el.value = uuid;
             }
             await this.refreshSoundNodeHint();
+        },
+
+        /** Resolve Sound node from the active scene (SoundPlayerModuleImpl / SlotSoundPlayerModule*). */
+        async autoPickSoundNode(this: any, opts?: { force?: boolean }): Promise<boolean> {
+            const force = opts?.force ?? false;
+            if (!force && this.getSoundNodeUuid()) {
+                return false;
+            }
+            try {
+                const found = await findSoundPlayerNodeInOpenScene();
+                if (!found) {
+                    if (force) {
+                        this.logError('No SoundPlayer node found in the open scene.');
+                    }
+                    return false;
+                }
+                const el = this.$.soundNode as HTMLElement & { value?: string };
+                if (el) {
+                    el.value = found.uuid;
+                }
+                await this.refreshSoundNodeHint();
+                const extra =
+                    found.candidateCount > 1
+                        ? ` (${found.candidateCount} candidates; picked best match by node name)`
+                        : '';
+                console.log(`[sound-setup] Auto Sound node: ${found.name} (${found.uuid})${extra}`);
+                return true;
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                console.warn('[sound-setup] auto pick Sound node failed', err);
+                if (force) {
+                    this.logError(`Auto Sound node failed: ${message}`);
+                }
+                return false;
+            }
         },
         logError(this: any, message: string) {
             this.$.results.innerHTML += `<div class="unused">${message}</div>`;
@@ -264,27 +306,27 @@ module.exports = Editor.Panel.define({
     ready() {
         const $ = this.$;
         const panel = this as any;
-        const onSceneContextChange = () => {
-            void panel.applyOpenSceneContext();
+        const onSceneReady = () => {
+            void panel.syncFromOpenScene();
         };
-        panel._onSceneReady = onSceneContextChange;
+        panel._onSceneReady = onSceneReady;
 
         $.btnSetupSfx?.addEventListener('confirm', () => this.setupSfxList());
         $.btnGenerate?.addEventListener('confirm', () => this.generateConfig());
         $.btnCheck?.addEventListener('confirm', () => this.checkUsage());
         $.btnClear?.addEventListener('confirm', () => this.clearResults());
         $.btnPickNode?.addEventListener('confirm', () => this.pickSoundNodeFromSelection());
-        $.btnSyncScene?.addEventListener('confirm', () => this.applyOpenSceneContext());
+        $.btnAutoSoundNode?.addEventListener('confirm', () => this.autoPickSoundNode({ force: true }));
+        $.btnSyncScene?.addEventListener('confirm', () => this.syncFromOpenScene());
         $.soundNode?.addEventListener('change', () => this.refreshSoundNodeHint());
         $.soundNode?.addEventListener('confirm', () => this.refreshSoundNodeHint());
         if ($.results) {
             $.results.innerHTML = '<span class="info">Open a game scene to auto-fill Game ID and Project path.</span>';
         }
 
-        Editor.Message.addBroadcastListener('scene:ready', onSceneContextChange);
+        Editor.Message.addBroadcastListener('scene:ready', onSceneReady);
 
-        void this.applyOpenSceneContext();
-        void this.refreshSoundNodeHint();
+        void panel.syncFromOpenScene();
     },
     beforeClose() {
         const panel = this as any;

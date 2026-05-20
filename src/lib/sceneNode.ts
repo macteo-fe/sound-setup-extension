@@ -22,6 +22,30 @@ export function getSelectedNodeUuid(): string | null {
     return Editor.Selection.getLastSelected('node') || null;
 }
 
+export interface FoundSoundPlayerNode {
+    uuid: string;
+    name: string;
+    candidateCount: number;
+}
+
+export async function findSoundPlayerNodeInOpenScene(): Promise<FoundSoundPlayerNode | null> {
+    const raw = (await Editor.Message.request('scene', 'execute-scene-script', {
+        name: 'sound-setup',
+        method: 'findSoundPlayerNodeUuid',
+        args: [],
+    })) as { uuid?: string; name?: string; candidateCount?: number } | null;
+
+    const uuid = raw?.uuid?.trim();
+    if (!uuid) {
+        return null;
+    }
+    return {
+        uuid,
+        name: String(raw?.name ?? ''),
+        candidateCount: typeof raw?.candidateCount === 'number' ? raw.candidateCount : 1,
+    };
+}
+
 export function formatNodeHint(info: SceneNodeInfo | null): string {
     if (!info) {
         return '';

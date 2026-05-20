@@ -156,6 +156,55 @@ function resolveSoundPlayerOnNode(nodeUuid) {
     return { node, soundComp };
 }
 
+function collectSoundPlayerNodes(scene) {
+    const matches = [];
+    function pushIfSoundPlayer(n) {
+        if (!n) {
+            return;
+        }
+        if (getSoundPlayerComponentOnNode(n)) {
+            matches.push({ uuid: n.uuid, name: n.name || '' });
+        }
+    }
+    if (!scene) {
+        return matches;
+    }
+    if (typeof scene.walk === 'function') {
+        scene.walk((n) => pushIfSoundPlayer(n));
+    } else {
+        const stack = [scene];
+        while (stack.length) {
+            const n = stack.pop();
+            pushIfSoundPlayer(n);
+            const children = (n && n.children) || [];
+            for (let i = children.length - 1; i >= 0; i--) {
+                stack.push(children[i]);
+            }
+        }
+    }
+    return matches;
+}
+
+function pickBestSoundPlayerMatch(matches) {
+    if (!matches.length) {
+        return null;
+    }
+    const lower = (s) => String(s || '').toLowerCase().trim();
+    let hit = matches.find((m) => lower(m.name) === 'slotsoundplayer');
+    if (hit) {
+        return hit;
+    }
+    hit = matches.find((m) => lower(m.name).includes('soundplayer'));
+    if (hit) {
+        return hit;
+    }
+    hit = matches.find((m) => lower(m.name).includes('sound'));
+    if (hit) {
+        return hit;
+    }
+    return matches[0];
+}
+
 function getSkipReason(soundId, clipUuid, soundIds, clipUuids) {
     const duplicateSoundId = soundIds.has(soundId);
     const duplicateClip = clipUuids.has(clipUuid);
@@ -181,6 +230,28 @@ exports.methods = {
             return { uuid: '', name: '' };
         }
         return { uuid: scene.uuid || '', name: scene.name || '' };
+    },
+
+    /**
+     * First node in the loaded scene that has SoundPlayerModuleImpl / SlotSoundPlayerModule*.
+     * Prefers name `SlotSoundPlayer`, then names containing `soundplayer` / `sound`.
+     * @returns {{ uuid: string, name: string, candidateCount: number } | null}
+     */
+    findSoundPlayerNodeUuid() {
+        const scene = director.getScene();
+        if (!scene) {
+            return null;
+        }
+        const matches = collectSoundPlayerNodes(scene);
+        const picked = pickBestSoundPlayerMatch(matches);
+        if (!picked) {
+            return null;
+        }
+        return {
+            uuid: picked.uuid,
+            name: picked.name,
+            candidateCount: matches.length,
+        };
     },
 
     /**
