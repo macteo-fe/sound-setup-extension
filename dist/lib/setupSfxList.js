@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.setupSfxListOnNode = exports.formatSetupSfxListHtml = exports.buildSfxEntriesFromFolder = void 0;
 const editorAsset_1 = require("./editorAsset");
+const openSceneContext_1 = require("./openSceneContext");
 const soundListFromNode_1 = require("./soundListFromNode");
 function buildSfxEntriesFromFolder(clips, gameId) {
     return clips.map((clip) => ({
@@ -119,6 +120,11 @@ async function setupSfxListOnNode(nodeUuid, sfxFolderUuid, gameId) {
         args: [nodeUuid, entries],
     });
     await Editor.Message.request('scene', 'save-scene');
-    return normalizeSetupResult(raw, addedItems, skippedItems);
+    const result = normalizeSetupResult(raw, addedItems, skippedItems);
+    // Inspector keeps a stale dump after runtime-only edits; force refresh by reselection.
+    if (result.added > 0) {
+        (0, openSceneContext_1.refreshInspectorByReselectNode)(nodeUuid);
+    }
+    return result;
 }
 exports.setupSfxListOnNode = setupSfxListOnNode;

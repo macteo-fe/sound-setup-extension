@@ -157,3 +157,22 @@ export async function detectGameContextFromOpenScene(): Promise<GameSceneContext
 export function formatSceneContextHint(ctx: GameSceneContext): string {
     return `From open scene: ${ctx.sceneName}.scene → ${ctx.projectPath} (${ctx.gameId})`;
 }
+
+/**
+ * Force Inspector to refresh by re-selecting the node.
+ * This avoids `open-scene` compatibility issues across Creator versions.
+ */
+export function refreshInspectorByReselectNode(nodeUuid: string | undefined): boolean {
+    const id = nodeUuid?.trim();
+    if (!id) {
+        return false;
+    }
+    try {
+        Editor.Selection.clear('node');
+        Editor.Selection.select('node', id);
+        return true;
+    } catch (e) {
+        console.warn('[sound-setup] failed to refresh Inspector selection', e);
+        return false;
+    }
+}

@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.formatSceneContextHint = exports.detectGameContextFromOpenScene = exports.getOpenSceneDbUrl = exports.findGameIdFromSoundConfig = exports.extractGameId = exports.parseSceneDbUrl = void 0;
+exports.refreshInspectorByReselectNode = exports.formatSceneContextHint = exports.detectGameContextFromOpenScene = exports.getOpenSceneDbUrl = exports.findGameIdFromSoundConfig = exports.extractGameId = exports.parseSceneDbUrl = void 0;
 const fs = __importStar(require("fs-extra"));
 const path = __importStar(require("path"));
 /** Parse db://assets/{projectPath}/{name}.scene */
@@ -159,3 +159,23 @@ function formatSceneContextHint(ctx) {
     return `From open scene: ${ctx.sceneName}.scene → ${ctx.projectPath} (${ctx.gameId})`;
 }
 exports.formatSceneContextHint = formatSceneContextHint;
+/**
+ * Force Inspector to refresh by re-selecting the node.
+ * This avoids `open-scene` compatibility issues across Creator versions.
+ */
+function refreshInspectorByReselectNode(nodeUuid) {
+    const id = nodeUuid === null || nodeUuid === void 0 ? void 0 : nodeUuid.trim();
+    if (!id) {
+        return false;
+    }
+    try {
+        Editor.Selection.clear('node');
+        Editor.Selection.select('node', id);
+        return true;
+    }
+    catch (e) {
+        console.warn('[sound-setup] failed to refresh Inspector selection', e);
+        return false;
+    }
+}
+exports.refreshInspectorByReselectNode = refreshInspectorByReselectNode;

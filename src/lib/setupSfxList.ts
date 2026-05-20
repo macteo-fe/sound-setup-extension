@@ -1,4 +1,5 @@
 import { filenameToSoundKey, normalizeSoundId, queryAudioClipsInFolder } from './editorAsset';
+import { refreshInspectorByReselectNode } from './openSceneContext';
 import { getExistingSfxKeysFromEditorDump } from './soundListFromNode';
 
 export interface SfxListEntry {
@@ -179,5 +180,12 @@ export async function setupSfxListOnNode(
 
     await Editor.Message.request('scene', 'save-scene');
 
-    return normalizeSetupResult(raw as Partial<SetupSfxListResult>, addedItems, skippedItems);
+    const result = normalizeSetupResult(raw as Partial<SetupSfxListResult>, addedItems, skippedItems);
+
+    // Inspector keeps a stale dump after runtime-only edits; force refresh by reselection.
+    if (result.added > 0) {
+        refreshInspectorByReselectNode(nodeUuid);
+    }
+
+    return result;
 }
