@@ -1,10 +1,19 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
+import { normalizeSoundId } from './editorAsset';
+
+export interface UnusedOnSceneEntry {
+    key: string;
+    paths: string[];
+}
 
 export interface ConfigCheckResult {
     objectName: string;
     used: string[];
-    unused: string[];
+    /** Not referenced in scripts and not found on the open scene */
+    unusedNotInScene: string[];
+    /** Not referenced in scripts but serialized on the open scene */
+    unusedOnScene: UnusedOnSceneEntry[];
 }
 
 function extractObjects(lines: string[]): Record<string, string[]> {
@@ -178,6 +187,22 @@ function isKeyUsed(
     return false;
 }
 
+async function fetchSoundIdRefsFromOpenScene(allConfigKeys: string[]): Promise<Record<string, string[]>> {
+    if (!allConfigKeys.length) {
+        return {};
+    }
+    try {
+        const raw = await Editor.Message.request('scene', 'execute-scene-script', {
+            name: 'sound-setup',
+            method: 'collectSoundIdRefsInScene',
+            args: [allConfigKeys],
+        });
+        return raw && typeof raw === 'object' ? (raw as Record<string, string[]>) : {};
+    } catch {
+        return {};
+    }
+}
+
 async function readAllScriptCode(scriptsDir: string, configFileName: string): Promise<string> {
     let allCode = '';
     const walk = async (dir: string): Promise<void> => {
@@ -205,33 +230,51 @@ export async function checkSoundConfigUsage(
     const allCode = await readAllScriptCode(scriptsDir, configFileName);
     const dynamicUsedKeys = collectDynamicUsedKeys(allCode, objects.SOUND_CONFIG || []);
 
+    const allConfigKeys = [...new Set(Object.values(objects).flat())];
+    const sceneRefsByNormalized = await fetchSoundIdRefsFromOpenScene(allConfigKeys);
+
     const results: ConfigCheckResult[] = [];
     for (const [objName, keys] of Object.entries(objects)) {
         const used: string[] = [];
-        const unused: string[] = [];
+        const unusedNotInScene: string[] = [];
+        const unusedOnScene: UnusedOnSceneEntry[] = [];
         for (const key of keys.sort()) {
             if (isKeyUsed(key, objName, allCode, dynamicUsedKeys)) {
                 used.push(key);
             } else {
-                unused.push(key);
+                const paths = sceneRefsByNormalized[normalizeSoundId(key)];
+                if (paths?.length) {
+                    unusedOnScene.push({ key, paths: [...paths] });
+                } else {
+                    unusedNotInScene.push(key);
+                }
             }
         }
-        results.push({ objectName: objName, used, unused });
+        results.push({ objectName: objName, used, unusedNotInScene, unusedOnScene });
     }
     return results;
 }
 
 export function formatCheckResults(results: ConfigCheckResult[]): string {
     const lines: string[] = ['=== Sound config usage ==='];
-    for (const { objectName, used, unused } of results) {
+    for (const { objectName, used, unusedNotInScene, unusedOnScene } of results) {
         lines.push(`\n--- ${objectName} ---`);
         for (const key of used) {
             lines.push(`✅ ${objectName}.${key}`);
         }
-        for (const key of unused) {
+        for (const { key, paths } of unusedOnScene) {
+            lines.push(`⚠️  ${objectName}.${key}  (appear on scene; not in code)`);
+            for (const p of paths) {
+                lines.push(`    ${p}`);
+            }
+        }
+        for (const key of unusedNotInScene) {
             lines.push(`❌ ${objectName}.${key}`);
         }
-        lines.push(`\n${used.length} used, ${unused.length} unused`);
+        const unusedTotal = unusedNotInScene.length + unusedOnScene.length;
+        lines.push(
+            `\n${used.length} used in code, ${unusedTotal} unused in code (${unusedOnScene.length} on scene, ${unusedNotInScene.length} not on scene)`,
+        );
     }
     return lines.join('\n');
 }

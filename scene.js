@@ -205,6 +205,129 @@ function pickBestSoundPlayerMatch(matches) {
     return matches[0];
 }
 
+function getNodeHierarchyPath(node) {
+    const parts = [];
+    let p = node;
+    while (p && p instanceof Node) {
+        parts.unshift(p.name || '');
+        p = p.parent;
+    }
+    return parts.join('/') || '(scene)';
+}
+
+/**
+ * @param {string[]} allowedKeysRaw keys from SoundConfig (any block); only these are recorded
+ * @returns {Record<string, string[]>} normalized soundId -> location descriptions
+ */
+function collectSoundIdRefsInSceneImpl(allowedKeysRaw) {
+    const allowed = new Set(
+        (allowedKeysRaw || []).map((k) => normalizeSoundId(k)).filter(Boolean),
+    );
+    /** @type Record<string, string[]> */
+    const byId = Object.create(null);
+
+    function pushRef(rawId, locationDesc) {
+        const k = normalizeSoundId(rawId);
+        if (!k || !allowed.has(k)) {
+            return;
+        }
+        if (!byId[k]) {
+            byId[k] = [];
+        }
+        byId[k].push(locationDesc);
+    }
+
+    function visitComponentsOnNode(node) {
+        const nodePath = getNodeHierarchyPath(node);
+        const comps = node.components || [];
+        for (const comp of comps) {
+            const cn = js.getClassName(comp.constructor);
+            if (!cn) {
+                continue;
+            }
+
+            if (isSoundPlayerClassName(cn)) {
+                const base = `${nodePath} • ${cn}`;
+                // const sfxList = Array.isArray(comp.sfxList) ? comp.sfxList : [];
+                // sfxList.forEach((item, i) => {
+                //     if (item && item.soundId) {
+                //         pushRef(item.soundId, `${base} • sfxList[${i}].soundId`);
+                //     }
+                // });
+                const musicList = Array.isArray(comp.musicList) ? comp.musicList : [];
+                musicList.forEach((item, i) => {
+                    if (item && item.soundId) {
+                        pushRef(item.soundId, `${base} • musicList[${i}].soundId`);
+                    }
+                });
+                if (comp.sfxClickId) {
+                    pushRef(comp.sfxClickId, `${base} • sfxClickId`);
+                }
+            }
+
+            const skipProps = new Set([
+                'node',
+                '__prefab',
+                'name',
+                '_id',
+                '_name',
+                '_objFlags',
+                'enabled',
+                'uuid',
+                'sfxList',
+                'musicList',
+            ]);
+            for (const prop of Object.keys(comp)) {
+                if (skipProps.has(prop) || prop.startsWith('_')) {
+                    continue;
+                }
+                try {
+                    const v = comp[prop];
+                    if (typeof v !== 'string') {
+                        continue;
+                    }
+                    const k = normalizeSoundId(v);
+                    if (!k || !allowed.has(k)) {
+                        continue;
+                    }
+                    pushRef(v, `${nodePath} • ${cn} • ${prop}`);
+                } catch {
+                    /* ignore */
+                }
+            }
+        }
+    }
+
+    function visit(node) {
+        if (!node) {
+            return;
+        }
+        visitComponentsOnNode(node);
+        const children = node.children || [];
+        for (let i = 0; i < children.length; i++) {
+            visit(children[i]);
+        }
+    }
+
+    const scene = director.getScene();
+    if (!scene) {
+        return byId;
+    }
+    if (typeof scene.walk === 'function') {
+        scene.walk((n) => {
+            visitComponentsOnNode(n);
+            /* walk already visits children; avoid double visit */
+        });
+    } else {
+        visit(scene);
+    }
+
+    for (const k of Object.keys(byId)) {
+        byId[k] = [...new Set(byId[k])];
+    }
+    return byId;
+}
+
 function getSkipReason(soundId, clipUuid, soundIds, clipUuids) {
     const duplicateSoundId = soundIds.has(soundId);
     const duplicateClip = clipUuids.has(clipUuid);
@@ -252,6 +375,14 @@ exports.methods = {
             name: picked.name,
             candidateCount: matches.length,
         };
+    },
+
+    /**
+     * @param {string[]} allowedKeys all SOUND_CONFIG / BGM_CONFIG keys (normalized match)
+     * @returns {Record<string, string[]>}
+     */
+    collectSoundIdRefsInScene(allowedKeys) {
+        return collectSoundIdRefsInSceneImpl(allowedKeys || []);
     },
 
     /**
