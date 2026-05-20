@@ -45,25 +45,59 @@ function setInputValue(el: HTMLElement | null, value: string): void {
     (el as HTMLInputElement).value = value;
 }
 
+function escapeHtml(s: string): string {
+    return s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
 function formatCheckResultsHtml(results: ConfigCheckResult[]): string {
     const parts: string[] = ['<div class="section-title">=== Sound config usage ===</div>'];
-    for (const { objectName, used, unused } of results) {
+    for (const { objectName, used, unusedNotInScene, unusedOnScene } of results) {
         parts.push(`<div class="section-title">--- ${objectName} ---</div>`);
         for (const key of used) {
             parts.push(`<div class="ok">✅ ${objectName}.${key}</div>`);
         }
-        for (const key of unused) {
+        for (const { key, paths } of unusedOnScene) {
+            parts.push(
+                `<div class="unused-scene">⚠️ ${objectName}.${key} — appear on scene (not in code)</div>`,
+            );
+            for (const p of paths) {
+                parts.push(`<div class="unused-scene-path">${escapeHtml(p)}</div>`);
+            }
+        }
+        for (const key of unusedNotInScene) {
             parts.push(`<div class="unused">❌ ${objectName}.${key}</div>`);
         }
-        parts.push(`<div class="info">${used.length} used, ${unused.length} unused</div>`);
+        const unusedTotal = unusedNotInScene.length + unusedOnScene.length;
+        parts.push(
+            `<div class="info">${used.length} used in code · ${unusedTotal} unused in code (${unusedOnScene.length} on scene, ${unusedNotInScene.length} not on scene)</div>`,
+        );
     }
     return parts.join('');
+}
+
+function logCheckResultsToConsole(results: ConfigCheckResult[]): void {
+    console.log('[sound-setup] Check usage\n', formatCheckResults(results));
+    const yellowKey = 'color:#fbbf24;font-weight:600';
+    const yellowPath = 'color:#fcd34d';
+    const dim = 'color:#9ca3af';
+    for (const r of results) {
+        for (const { key, paths } of r.unusedOnScene) {
+            console.log(`%c⚠ ${r.objectName}.${key}%c — appear on scene (not in code)`, yellowKey, dim);
+            for (const p of paths) {
+                console.log(`%c  ${p}`, yellowPath);
+            }
+        }
+    }
 }
 
 module.exports = Editor.Panel.define({
     listeners: {
         show() {
-            void (this as any).applyOpenSceneContext();
+            void (this as any).syncFromOpenScene();
         },
         hide() {},
     },
@@ -292,7 +326,7 @@ module.exports = Editor.Panel.define({
             try {
                 const results = await checkSoundConfigUsage(configFsPath, scriptsDir);
                 this.$.results.innerHTML = formatCheckResultsHtml(results);
-                console.log('[sound-setup] Check usage\n', formatCheckResults(results));
+                logCheckResultsToConsole(results);
             } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
                 this.logError(`Check failed: ${message}`);

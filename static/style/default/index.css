@@ -326,6 +326,14 @@ ui-checkbox {
     color: #9ca3af;
 }
 
-.results-body .warn {
+.results-body .unused-scene {
     color: #fbbf24;
+    font-weight: 600;
+}
+
+.results-body .unused-scene-path {
+    color: #fcd34d;
+    margin: 2px 0 4px 14px;
+    font-size: 10px;
+    line-height: 1.4;
 }
