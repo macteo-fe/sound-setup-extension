@@ -368,6 +368,10 @@ module.exports = Editor.Panel.define({
         $.soundNode?.addEventListener('confirm', () => this.refreshSoundNodeHint());
         if ($.results) {
             $.results.innerHTML = '<span class="info">Open a game scene to auto-fill Game ID and Project path.</span>';
+            const allowTextSelection = (event: Event) => event.stopPropagation();
+            $.results.addEventListener('mousedown', allowTextSelection);
+            $.results.addEventListener('pointerdown', allowTextSelection);
+            panel._onResultsSelect = allowTextSelection;
         }
 
         Editor.Message.addBroadcastListener('scene:ready', onSceneReady);
@@ -379,6 +383,11 @@ module.exports = Editor.Panel.define({
         if (panel._onSceneReady) {
             Editor.Message.removeBroadcastListener('scene:ready', panel._onSceneReady);
             panel._onSceneReady = null;
+        }
+        if (panel._onResultsSelect && panel.$.results) {
+            panel.$.results.removeEventListener('mousedown', panel._onResultsSelect);
+            panel.$.results.removeEventListener('pointerdown', panel._onResultsSelect);
+            panel._onResultsSelect = null;
         }
     },
     close() {},

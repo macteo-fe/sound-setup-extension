@@ -302,6 +302,15 @@ ui-checkbox {
     line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;
+    -webkit-user-select: text;
+    user-select: text;
+    cursor: text;
+}
+
+.results-body,
+.results-body * {
+    -webkit-user-select: text !important;
+    user-select: text !important;
 }
 
 .results-body .section-title {
