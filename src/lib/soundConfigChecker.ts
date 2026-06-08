@@ -1,19 +1,33 @@
+/* eslint-disable no-useless-escape */
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import { normalizeSoundId } from './editorAsset';
 
-export interface UnusedOnSceneEntry {
+export interface UsedOnSceneOnlyEntry {
     key: string;
     paths: string[];
 }
 
+export interface UsedInCodeEntry {
+    key: string;
+    files: string[];
+}
+
 export interface ConfigCheckResult {
     objectName: string;
+    /** Referenced in scripts and/or serialized on the open scene */
     used: string[];
+    /** Referenced in scripts with matching file paths */
+    usedInCode: UsedInCodeEntry[];
+    /** Used via scene only (subset of used; not referenced in scripts) */
+    usedOnSceneOnly: UsedOnSceneOnlyEntry[];
     /** Not referenced in scripts and not found on the open scene */
     unusedNotInScene: string[];
-    /** Not referenced in scripts but serialized on the open scene */
-    unusedOnScene: UnusedOnSceneEntry[];
+}
+
+interface ScriptFile {
+    relativePath: string;
+    content: string;
 }
 
 function extractObjects(lines: string[]): Record<string, string[]> {
@@ -169,25 +183,115 @@ function collectDynamicUsedKeys(allCode: string, configKeys: string[]): Set<stri
     return used;
 }
 
-function isSoundIdUsed(
+function isSoundIdReferencedInFile(
     soundId: string,
-    allCode: string,
-    dynamicUsedKeys: Set<string>,
-    configObjectNames: string[] = [],
+    file: ScriptFile,
+    configObjectNames: string[],
 ): boolean {
-    if (dynamicUsedKeys.has(soundId)) {
-        return true;
-    }
-    const escaped = soundId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (new RegExp(`['"]${escaped}['"]`).test(allCode)) {
+    if (file.content.includes(`'${soundId}'`) || file.content.includes(`"${soundId}"`)) {
         return true;
     }
     for (const objName of configObjectNames) {
-        if (new RegExp(`\\b${objName}\\.${escaped}\\b`).test(allCode)) {
+        if (file.content.includes(`${objName}.${soundId}`)) {
             return true;
         }
     }
     return false;
+}
+
+interface DynamicAnalysis {
+    prefixes: string[];
+    prefixMap: Record<string, string>;
+    prefixToKeys: Map<string, Set<string>>;
+}
+
+function analyzeDynamicUsage(allCode: string, allSoundIds: string[]): DynamicAnalysis {
+    const prefixMap = extractFunctionPrefixMap(allCode);
+    const symbolArrays = extractSymbolSuffixArrays(allCode);
+    const prefixes = soundConfigPrefixes(allCode, allSoundIds);
+    const prefixToKeys = new Map<string, Set<string>>();
+    for (const prefix of prefixes) {
+        const guardSuffixes = guardSuffixesForPrefix(prefix, allCode, prefixMap, symbolArrays);
+        prefixToKeys.set(prefix, expandPrefixToKeys(prefix, allSoundIds, guardSuffixes));
+    }
+    return { prefixes, prefixMap, prefixToKeys };
+}
+
+function fileMatchesDynamicPrefix(file: ScriptFile, prefix: string, prefixMap: Record<string, string>): boolean {
+    if (file.content.includes(`\`${prefix}\$\{`)) {
+        return true;
+    }
+    for (const [funcName, funcPrefix] of Object.entries(prefixMap)) {
+        if (funcPrefix === prefix && file.content.includes(`${funcName}(`)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function yieldToUi(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** One pass over script files — avoids O(soundIds × files × heavy parse). */
+async function buildCodeUsageIndex(
+    scriptFiles: ScriptFile[],
+    allSoundIds: string[],
+    allCode: string,
+    configObjectNames: string[],
+): Promise<Map<string, string[]>> {
+    const refs = new Map<string, Set<string>>();
+    const soundIdSet = new Set(allSoundIds);
+    const analysis = analyzeDynamicUsage(allCode, allSoundIds);
+    const hasDynamicPatterns = analysis.prefixes.length > 0;
+
+    const addRef = (soundId: string, filePath: string): void => {
+        if (!soundIdSet.has(soundId)) {
+            return;
+        }
+        let paths = refs.get(soundId);
+        if (!paths) {
+            paths = new Set();
+            refs.set(soundId, paths);
+        }
+        paths.add(filePath);
+    };
+
+    for (let i = 0; i < scriptFiles.length; i++) {
+        const file = scriptFiles[i];
+        for (const soundId of allSoundIds) {
+            if (isSoundIdReferencedInFile(soundId, file, configObjectNames)) {
+                addRef(soundId, file.relativePath);
+            }
+        }
+
+        if (hasDynamicPatterns && file.content.includes('`')) {
+            if (file.content.includes('${')) {
+                for (const key of collectDynamicUsedKeys(file.content, allSoundIds)) {
+                    addRef(key, file.relativePath);
+                }
+            }
+            for (const prefix of analysis.prefixes) {
+                const keys = analysis.prefixToKeys.get(prefix);
+                if (!keys?.size || !fileMatchesDynamicPrefix(file, prefix, analysis.prefixMap)) {
+                    continue;
+                }
+                for (const key of keys) {
+                    addRef(key, file.relativePath);
+                }
+            }
+        }
+
+        if (i > 0 && i % 40 === 0) {
+            await yieldToUi();
+        }
+    }
+
+    const result = new Map<string, string[]>();
+    for (const [id, paths] of refs) {
+        result.set(id, [...paths].sort());
+    }
+    return result;
 }
 
 async function fetchSoundIdRefsFromOpenScene(allConfigKeys: string[]): Promise<Record<string, string[]>> {
@@ -206,8 +310,8 @@ async function fetchSoundIdRefsFromOpenScene(allConfigKeys: string[]): Promise<R
     }
 }
 
-async function readAllScriptCode(scriptsDir: string, excludeFsPath?: string): Promise<string> {
-    let allCode = '';
+async function readScriptFiles(scriptsDir: string, excludeFsPath?: string): Promise<ScriptFile[]> {
+    const files: ScriptFile[] = [];
     const walk = async (dir: string): Promise<void> => {
         const entries = await fs.readdir(dir, { withFileTypes: true });
         for (const entry of entries) {
@@ -219,12 +323,19 @@ async function readAllScriptCode(scriptsDir: string, excludeFsPath?: string): Pr
                 /\.(ts|js)$/.test(entry.name) &&
                 fullPath !== excludeFsPath
             ) {
-                allCode += `${await fs.readFile(fullPath, 'utf-8')}\n`;
+                files.push({
+                    relativePath: path.relative(scriptsDir, fullPath).replace(/\\/g, '/'),
+                    content: await fs.readFile(fullPath, 'utf-8'),
+                });
             }
         }
     };
     await walk(scriptsDir);
-    return allCode;
+    return files;
+}
+
+function joinScriptCode(scriptFiles: ScriptFile[]): string {
+    return scriptFiles.map((f) => f.content).join('\n');
 }
 
 export interface SoundUsageCheckOptions {
@@ -238,29 +349,31 @@ export interface SoundUsageCheckOptions {
 function checkSoundIdsInCategory(
     objectName: string,
     soundIds: string[],
-    allCode: string,
-    dynamicUsedKeys: Set<string>,
-    configObjectNames: string[],
+    codeUsageIndex: Map<string, string[]>,
     sceneRefsByNormalized: Record<string, string[]>,
 ): ConfigCheckResult {
     const used: string[] = [];
+    const usedInCode: UsedInCodeEntry[] = [];
+    const usedOnSceneOnly: UsedOnSceneOnlyEntry[] = [];
     const unusedNotInScene: string[] = [];
-    const unusedOnScene: UnusedOnSceneEntry[] = [];
 
     for (const soundId of [...new Set(soundIds.map((id) => normalizeSoundId(id)))].filter(Boolean).sort()) {
-        if (isSoundIdUsed(soundId, allCode, dynamicUsedKeys, configObjectNames)) {
+        const codeFiles = codeUsageIndex.get(soundId) || [];
+        if (codeFiles.length) {
             used.push(soundId);
+            usedInCode.push({ key: soundId, files: codeFiles });
+            continue;
+        }
+        const paths = sceneRefsByNormalized[soundId];
+        if (paths?.length) {
+            used.push(soundId);
+            usedOnSceneOnly.push({ key: soundId, paths: [...paths] });
         } else {
-            const paths = sceneRefsByNormalized[soundId];
-            if (paths?.length) {
-                unusedOnScene.push({ key: soundId, paths: [...paths] });
-            } else {
-                unusedNotInScene.push(soundId);
-            }
+            unusedNotInScene.push(soundId);
         }
     }
 
-    return { objectName, used, unusedNotInScene, unusedOnScene };
+    return { objectName, used, usedInCode, usedOnSceneOnly, unusedNotInScene };
 }
 
 export async function checkSoundUsage(options: SoundUsageCheckOptions): Promise<ConfigCheckResult[]> {
@@ -279,38 +392,26 @@ export async function checkSoundUsage(options: SoundUsageCheckOptions): Promise<
         }
     }
 
-    const allCode = await readAllScriptCode(scriptsDir, configExists ? configFsPath : undefined);
+    const scriptFiles = await readScriptFiles(scriptsDir, configExists ? configFsPath : undefined);
+    const allCode = joinScriptCode(scriptFiles);
     const allSoundIds = [
         ...sfxSoundIds.map((id) => normalizeSoundId(id)),
         ...musicSoundIds.map((id) => normalizeSoundId(id)),
     ].filter(Boolean);
-    const dynamicUsedKeys = collectDynamicUsedKeys(allCode, allSoundIds);
+    const codeUsageIndex = await buildCodeUsageIndex(
+        scriptFiles,
+        allSoundIds,
+        allCode,
+        configObjectNames,
+    );
     const sceneRefsByNormalized = await fetchSoundIdRefsFromOpenScene(allSoundIds);
 
     const results: ConfigCheckResult[] = [];
     if (sfxSoundIds.length) {
-        results.push(
-            checkSoundIdsInCategory(
-                'sfxList',
-                sfxSoundIds,
-                allCode,
-                dynamicUsedKeys,
-                configObjectNames,
-                sceneRefsByNormalized,
-            ),
-        );
+        results.push(checkSoundIdsInCategory('sfxList', sfxSoundIds, codeUsageIndex, sceneRefsByNormalized));
     }
     if (musicSoundIds.length) {
-        results.push(
-            checkSoundIdsInCategory(
-                'musicList',
-                musicSoundIds,
-                allCode,
-                dynamicUsedKeys,
-                configObjectNames,
-                sceneRefsByNormalized,
-            ),
-        );
+        results.push(checkSoundIdsInCategory('musicList', musicSoundIds, codeUsageIndex, sceneRefsByNormalized));
     }
     return results;
 }
@@ -330,26 +431,78 @@ export async function checkSoundConfigUsage(
     });
 }
 
+export interface CheckUsageSummary {
+    total: number;
+    used: number;
+    usedInCode: number;
+    usedOnSceneOnly: number;
+    unused: number;
+}
+
+export function summarizeCheckResults(results: ConfigCheckResult[]): CheckUsageSummary {
+    let usedOnSceneOnly = 0;
+    let unused = 0;
+    let used = 0;
+    for (const r of results) {
+        used += r.used.length;
+        usedOnSceneOnly += r.usedOnSceneOnly.length;
+        unused += r.unusedNotInScene.length;
+    }
+    return {
+        total: used + unused,
+        used,
+        usedInCode: used - usedOnSceneOnly,
+        usedOnSceneOnly,
+        unused,
+    };
+}
+
+function formatCheckSummaryLine(summary: CheckUsageSummary): string {
+    return (
+        `Total: ${summary.used} / ${summary.total} used` +
+        ` (${summary.usedInCode} in code, ${summary.usedOnSceneOnly} on scene)` +
+        ` · ${summary.unused} unused`
+    );
+}
+
+function sceneOnlyKeySet(entries: UsedOnSceneOnlyEntry[]): Set<string> {
+    return new Set(entries.map((e) => e.key));
+}
+
+function usedInCodeByKey(entries: UsedInCodeEntry[]): Map<string, string[]> {
+    return new Map(entries.map((e) => [e.key, e.files]));
+}
+
 export function formatCheckResults(results: ConfigCheckResult[]): string {
     const lines: string[] = ['=== Sound usage (from sound node) ==='];
-    for (const { objectName, used, unusedNotInScene, unusedOnScene } of results) {
+    for (const { objectName, used, usedInCode, usedOnSceneOnly, unusedNotInScene } of results) {
         lines.push(`\n--- ${objectName} ---`);
+        const sceneOnly = sceneOnlyKeySet(usedOnSceneOnly);
+        const sceneOnlyByKey = new Map(usedOnSceneOnly.map((e) => [e.key, e.paths]));
+        const codeByKey = usedInCodeByKey(usedInCode);
         for (const key of used) {
-            lines.push(`✅ ${key}`);
-        }
-        for (const { key, paths } of unusedOnScene) {
-            lines.push(`⚠️  ${key}  (appear on scene; not in code)`);
-            for (const p of paths) {
-                lines.push(`    ${p}`);
+            if (sceneOnly.has(key)) {
+                lines.push(`✅ ${key}  (on scene)`);
+                for (const p of sceneOnlyByKey.get(key) || []) {
+                    lines.push(`    ${p}`);
+                }
+            } else {
+                lines.push(`✅ ${key}`);
+                for (const file of codeByKey.get(key) || []) {
+                    lines.push(`    ${file}`);
+                }
             }
         }
         for (const key of unusedNotInScene) {
             lines.push(`❌ ${key}`);
         }
-        const unusedTotal = unusedNotInScene.length + unusedOnScene.length;
         lines.push(
-            `\n${used.length} used in code, ${unusedTotal} unused in code (${unusedOnScene.length} on scene, ${unusedNotInScene.length} not on scene)`,
+            `\n${used.length} used (${usedInCode.length} in code, ${usedOnSceneOnly.length} on scene), ${unusedNotInScene.length} unused`,
         );
+    }
+    const summary = summarizeCheckResults(results);
+    if (summary.total > 0) {
+        lines.push(`\n=== ${formatCheckSummaryLine(summary)} ===`);
     }
     return lines.join('\n');
 }
