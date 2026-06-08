@@ -54,20 +54,20 @@ function escapeHtml(s) {
         .replace(/"/g, '&quot;');
 }
 function formatCheckResultsHtml(results) {
-    const parts = ['<div class="section-title">=== Sound config usage ===</div>'];
+    const parts = ['<div class="section-title">=== Sound usage (from sound node) ===</div>'];
     for (const { objectName, used, unusedNotInScene, unusedOnScene } of results) {
         parts.push(`<div class="section-title">--- ${objectName} ---</div>`);
         for (const key of used) {
-            parts.push(`<div class="ok">✅ ${objectName}.${key}</div>`);
+            parts.push(`<div class="ok">✅ ${escapeHtml(key)}</div>`);
         }
         for (const { key, paths } of unusedOnScene) {
-            parts.push(`<div class="unused-scene">⚠️ ${objectName}.${key} — appear on scene (not in code)</div>`);
+            parts.push(`<div class="unused-scene">⚠️ ${escapeHtml(key)} — appear on scene (not in code)</div>`);
             for (const p of paths) {
                 parts.push(`<div class="unused-scene-path">${escapeHtml(p)}</div>`);
             }
         }
         for (const key of unusedNotInScene) {
-            parts.push(`<div class="unused">❌ ${objectName}.${key}</div>`);
+            parts.push(`<div class="unused">❌ ${escapeHtml(key)}</div>`);
         }
         const unusedTotal = unusedNotInScene.length + unusedOnScene.length;
         parts.push(`<div class="info">${used.length} used in code · ${unusedTotal} unused in code (${unusedOnScene.length} on scene, ${unusedNotInScene.length} not on scene)</div>`);
@@ -81,7 +81,7 @@ function logCheckResultsToConsole(results) {
     const dim = 'color:#9ca3af';
     for (const r of results) {
         for (const { key, paths } of r.unusedOnScene) {
-            console.log(`%c⚠ ${r.objectName}.${key}%c — appear on scene (not in code)`, yellowKey, dim);
+            console.log(`%c⚠ ${key}%c — appear on scene (not in code)`, yellowKey, dim);
             for (const p of paths) {
                 console.log(`%c  ${p}`, yellowPath);
             }
@@ -291,18 +291,30 @@ module.exports = Editor.Panel.define({
         async checkUsage() {
             const gameId = getInputValue(this.$.gameID);
             const projectPath = getInputValue(this.$.folder);
+            const nodeUuid = this.getSoundNodeUuid();
             if (!gameId || !projectPath) {
                 this.logError('Game ID and project path are required.');
                 return;
             }
-            const configFsPath = (0, editorAsset_1.getConfigFsPath)(projectPath, gameId);
-            const scriptsDir = (0, editorAsset_1.getScriptsFsDir)(projectPath);
-            if (!(await fs.pathExists(configFsPath))) {
-                this.logError(`Config not found: ${configFsPath}`);
+            if (!nodeUuid) {
+                this.logError('Assign a sound node with sfxList / musicList.');
                 return;
             }
+            const scriptsDir = (0, editorAsset_1.getScriptsFsDir)(projectPath);
+            const configFsPath = (0, editorAsset_1.getConfigFsPath)(projectPath, gameId);
+            const configExists = await fs.pathExists(configFsPath);
             try {
-                const results = await (0, soundConfigChecker_1.checkSoundConfigUsage)(configFsPath, scriptsDir);
+                const lists = await (0, soundConfigGenerator_1.getSoundListKeysFromNode)(nodeUuid);
+                if (!lists.sfxSoundIds.length && !lists.musicSoundIds.length) {
+                    this.logError('sfxList and musicList are empty on the sound node.');
+                    return;
+                }
+                const results = await (0, soundConfigChecker_1.checkSoundUsage)({
+                    scriptsDir,
+                    sfxSoundIds: lists.sfxSoundIds,
+                    musicSoundIds: lists.musicSoundIds,
+                    configFsPath: configExists ? configFsPath : undefined,
+                });
                 this.$.results.innerHTML = formatCheckResultsHtml(results);
                 logCheckResultsToConsole(results);
             }
