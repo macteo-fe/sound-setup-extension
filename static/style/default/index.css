@@ -38,13 +38,22 @@
     color: #9ca3af;
 }
 
-.input-section {
+.input-area {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin-bottom: 8px;
+    flex-shrink: 0;
     background: rgba(255, 255, 255, 0.06);
     border-radius: 4px;
-    padding: 8px;
-    margin-bottom: 8px;
     border: 1px solid rgba(255, 255, 255, 0.1);
-    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.input-section {
+    flex: 1;
+    min-width: 0;
+    padding: 8px;
 }
 
 .scan-input {
@@ -249,22 +258,39 @@ ui-checkbox {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    margin-bottom: 8px;
     flex-shrink: 0;
+    align-self: stretch;
+    min-width: 220px;
+    width: 32%;
+    max-width: 280px;
+    padding: 10px;
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.12);
+    box-sizing: border-box;
 }
 
-.action-block {
+.action-blocks .action-btn {
+    flex: 1 1 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 36px;
+    white-space: nowrap;
+    font-size: 13px;
+    text-align: center;
+}
+
+.tips-section {
     display: flex;
     flex-direction: column;
     gap: 6px;
-}
-
-.action-block .field-tips {
-    margin-bottom: 0;
-}
-
-.action-block .action-btn {
-    width: 100%;
+    margin-top: 8px;
+    flex-shrink: 0;
+    max-height: 28vh;
+    overflow: auto;
+    border-top: 1px solid #444;
+    padding-top: 8px;
 }
 
 .results-section {

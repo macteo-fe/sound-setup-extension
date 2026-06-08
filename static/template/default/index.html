@@ -4,114 +4,37 @@
         <p class="subtitle">Setup SFX from folder · Generate SoundConfig from sound node sfxList</p>
     </div>
 
-    <div class="input-section">
-        <div class="scan-input node-ref-row">
-            <span class="scan-label">Game ID</span>
-            <ui-input id="gameID" placeholder="e.g. 9766"></ui-input>
-            <ui-button id="btnSyncScene" class="small" title="Fill Game ID and Project path from the open scene">From scene</ui-button>
+    <div class="input-area">
+        <div class="input-section">
+            <div class="scan-input node-ref-row">
+                <span class="scan-label">Game ID</span>
+                <ui-input id="gameID" placeholder="e.g. 9766"></ui-input>
+                <ui-button id="btnSyncScene" class="small" title="Fill Game ID and Project path from the open scene">From scene</ui-button>
+            </div>
+            <div class="scan-input">
+                <span class="scan-label">Project path</span>
+                <ui-input id="folder" placeholder="cc-release-slot/cc30-nine-tailed-fox-9766"></ui-input>
+            </div>
+            <div id="sceneDetectHint" class="node-hint scene-detect-hint"></div>
+            <div class="scan-input node-ref-row">
+                <span class="scan-label">Sound node</span>
+                <ui-node id="soundNode" type="cc.Node" typename="Node" droppable="node" placeholder="Drag node from Hierarchy"></ui-node>
+                <ui-button id="btnPickNode" class="small">Pick</ui-button>
+                <ui-button id="btnAutoSoundNode" class="small" title="Find SlotSoundPlayer (or first SoundPlayer module) in the open scene">Auto</ui-button>
+            </div>
+            <div id="soundNodeHint" class="node-hint"></div>
+            <div class="scan-input">
+                <span class="scan-label">SFX folder</span>
+                <ui-asset id="sfxFolder" droppable="cc.Asset" placeholder="Drag SFX folder (mp3)"></ui-asset>
+            </div>
+            <div class="scan-input checkbox-row">
+                <ui-checkbox id="preserveBgm" checked>Preserve existing BGM_CONFIG when musicList is empty</ui-checkbox>
+            </div>
         </div>
-        <div class="scan-input">
-            <span class="scan-label">Project path</span>
-            <ui-input id="folder" placeholder="cc-release-slot/cc30-nine-tailed-fox-9766"></ui-input>
-        </div>
-        <div id="sceneDetectHint" class="node-hint scene-detect-hint"></div>
-        <div class="scan-input node-ref-row">
-            <span class="scan-label">Sound node</span>
-            <ui-node id="soundNode" type="cc.Node" typename="Node" droppable="node" placeholder="Drag node from Hierarchy"></ui-node>
-            <ui-button id="btnPickNode" class="small">Pick</ui-button>
-            <ui-button id="btnAutoSoundNode" class="small" title="Find SlotSoundPlayer (or first SoundPlayer module) in the open scene">Auto</ui-button>
-        </div>
-        <div id="soundNodeHint" class="node-hint"></div>
-        <div class="scan-input">
-            <span class="scan-label">SFX folder</span>
-            <ui-asset id="sfxFolder" droppable="cc.Asset" placeholder="Drag SFX folder (mp3)"></ui-asset>
-        </div>
-        <div class="scan-input checkbox-row">
-            <ui-checkbox id="preserveBgm" checked>Preserve existing BGM_CONFIG when musicList is empty</ui-checkbox>
-        </div>
-    </div>
 
-    <div class="action-blocks">
-        <div class="action-block">
-            <details class="field-tips setup-sfx-tips">
-                <summary class="tips-toggle">
-                    <span class="tips-chevron"></span>
-                    <span class="tips-title">Setup SFX list</span>
-                    <span class="tips-hint">SFX folder → sound node sfxList</span>
-                </summary>
-                <div class="tips-body">
-                    <p class="tips-desc">
-                        Scans every <strong>.mp3</strong> AudioClip in <strong>SFX folder</strong> and appends new entries to
-                        <strong>Sound node</strong> → <code>sfxList</code> (CustomAudioClipModule: <code>soundId</code> +
-                        <code>audioFile</code>). Skips items that already exist (same <code>soundId</code> or same clip).
-                        Saves the scene when done.
-                    </p>
-                    <p class="tips-fields-label">Fields used:</p>
-                    <ul class="tips-fields">
-                        <li><strong>Game ID</strong> — strips the <code>{gameId}_</code> prefix from filenames to build
-                            <code>soundId</code> (e.g. <code>9766_sfx_winline.mp3</code> → <code>SFX_WINLINE</code>)</li>
-                        <li><strong>Sound node</strong> — node with SoundPlayerModuleImpl / SlotSoundPlayerModule*; writes
-                            <code>sfxList</code></li>
-                        <li><strong>SFX folder</strong> — source folder of mp3 clips to add</li>
-                    </ul>
-                    <p class="tips-note">Not used: Project path, Preserve BGM checkbox.</p>
-                </div>
-            </details>
+        <div class="action-blocks">
             <ui-button id="btnSetupSfx" class="primary action-btn">Setup SFX list</ui-button>
-        </div>
-
-        <div class="action-block">
-            <details class="field-tips generate-tips">
-                <summary class="tips-toggle">
-                    <span class="tips-chevron"></span>
-                    <span class="tips-title">Generate SoundConfig</span>
-                    <span class="tips-hint">sound node → SoundConfig{gameId}.ts</span>
-                </summary>
-                <div class="tips-body">
-                    <p class="tips-desc">
-                        Reads <code>soundId</code> values from <strong>Sound node</strong> → <code>sfxList</code> and
-                        <code>musicList</code>, then writes
-                        <code>scripts/DataConfig/SoundConfig{gameId}.ts</code> under <strong>Project path</strong> with
-                        <code>SOUND_CONFIG</code> and <code>BGM_CONFIG</code> constant maps. Refreshes the asset in the
-                        database.
-                    </p>
-                    <p class="tips-fields-label">Fields used:</p>
-                    <ul class="tips-fields">
-                        <li><strong>Game ID</strong> — output file name <code>SoundConfig{gameId}.ts</code></li>
-                        <li><strong>Project path</strong> — game assets root (e.g.
-                            <code>cc-release-slot/cc30-nine-tailed-fox-9766</code>)</li>
-                        <li><strong>Sound node</strong> — reads <code>sfxList</code> → <code>SOUND_CONFIG</code>;
-                            <code>musicList</code> → <code>BGM_CONFIG</code></li>
-                        <li><strong>Preserve BGM checkbox</strong> — if <code>musicList</code> is empty, keeps existing
-                            <code>BGM_CONFIG</code> block from the file on disk</li>
-                    </ul>
-                    <p class="tips-note">Not used: SFX folder (run Setup SFX list first to populate the node).</p>
-                </div>
-            </details>
             <ui-button id="btnGenerate" class="action-btn">Generate SoundConfig</ui-button>
-        </div>
-
-        <div class="action-block">
-            <details class="field-tips check-tips">
-                <summary class="tips-toggle">
-                    <span class="tips-chevron"></span>
-                    <span class="tips-title">Check usage</span>
-                    <span class="tips-hint">scan scripts for config key references</span>
-                </summary>
-                <div class="tips-body">
-                    <p class="tips-desc">
-                        Loads <code>SoundConfig{gameId}.ts</code> and scans all <code>.ts</code> files under
-                        <code>{project}/scripts</code> for references to <code>SOUND_CONFIG.*</code> and
-                        <code>BGM_CONFIG.*</code>. Reports which keys are used vs unused in code.
-                    </p>
-                    <p class="tips-fields-label">Fields used:</p>
-                    <ul class="tips-fields">
-                        <li><strong>Game ID</strong> — locates <code>SoundConfig{gameId}.ts</code></li>
-                        <li><strong>Project path</strong> — scripts folder to search for usages</li>
-                    </ul>
-                    <p class="tips-note">Not used: Sound node, SFX folder, Preserve BGM checkbox.</p>
-                </div>
-            </details>
             <ui-button id="btnCheck" class="action-btn">Check usage</ui-button>
         </div>
     </div>
@@ -122,5 +45,84 @@
             <ui-button id="btnClear" class="small">Clear</ui-button>
         </div>
         <div id="results" class="results-body"></div>
+    </div>
+
+    <div class="tips-section">
+        <details class="field-tips setup-sfx-tips">
+            <summary class="tips-toggle">
+                <span class="tips-chevron"></span>
+                <span class="tips-title">Setup SFX list</span>
+                <span class="tips-hint">SFX folder → sound node sfxList</span>
+            </summary>
+            <div class="tips-body">
+                <p class="tips-desc">
+                    Scans every <strong>.mp3</strong> AudioClip in <strong>SFX folder</strong> and appends new entries to
+                    <strong>Sound node</strong> → <code>sfxList</code> (CustomAudioClipModule: <code>soundId</code> +
+                    <code>audioFile</code>). Skips items that already exist (same <code>soundId</code> or same clip).
+                    Saves the scene when done.
+                </p>
+                <p class="tips-fields-label">Fields used:</p>
+                <ul class="tips-fields">
+                    <li><strong>Game ID</strong> — strips the <code>{gameId}_</code> prefix from filenames to build
+                        <code>soundId</code> (e.g. <code>9766_sfx_winline.mp3</code> → <code>SFX_WINLINE</code>)</li>
+                    <li><strong>Sound node</strong> — node with SoundPlayerModuleImpl / SlotSoundPlayerModule*; writes
+                        <code>sfxList</code></li>
+                    <li><strong>SFX folder</strong> — source folder of mp3 clips to add</li>
+                </ul>
+                <p class="tips-note">Not used: Project path, Preserve BGM checkbox.</p>
+            </div>
+        </details>
+
+        <details class="field-tips generate-tips">
+            <summary class="tips-toggle">
+                <span class="tips-chevron"></span>
+                <span class="tips-title">Generate SoundConfig</span>
+                <span class="tips-hint">sound node → SoundConfig{gameId}.ts</span>
+            </summary>
+            <div class="tips-body">
+                <p class="tips-desc">
+                    Reads <code>soundId</code> values from <strong>Sound node</strong> → <code>sfxList</code> and
+                    <code>musicList</code>, then writes
+                    <code>scripts/DataConfig/SoundConfig{gameId}.ts</code> under <strong>Project path</strong> with
+                    <code>SOUND_CONFIG</code> and <code>BGM_CONFIG</code> constant maps. Refreshes the asset in the
+                    database.
+                </p>
+                <p class="tips-fields-label">Fields used:</p>
+                <ul class="tips-fields">
+                    <li><strong>Game ID</strong> — output file name <code>SoundConfig{gameId}.ts</code></li>
+                    <li><strong>Project path</strong> — game assets root (e.g.
+                        <code>cc-release-slot/cc30-nine-tailed-fox-9766</code>)</li>
+                    <li><strong>Sound node</strong> — reads <code>sfxList</code> → <code>SOUND_CONFIG</code>;
+                        <code>musicList</code> → <code>BGM_CONFIG</code></li>
+                    <li><strong>Preserve BGM checkbox</strong> — if <code>musicList</code> is empty, keeps existing
+                        <code>BGM_CONFIG</code> block from the file on disk</li>
+                </ul>
+                <p class="tips-note">Not used: SFX folder (run Setup SFX list first to populate the node).</p>
+            </div>
+        </details>
+
+        <details class="field-tips check-tips">
+            <summary class="tips-toggle">
+                <span class="tips-chevron"></span>
+                <span class="tips-title">Check usage</span>
+                <span class="tips-hint">sound node → scan scripts by sound id</span>
+            </summary>
+            <div class="tips-body">
+                <p class="tips-desc">
+                    Loads <code>soundId</code> values from <strong>Sound node</strong> → <code>sfxList</code> and
+                    <code>musicList</code>, then scans all <code>.ts</code> files under <code>{project}/scripts</code>
+                    for references to each sound id (quoted strings, dynamic templates, and optionally
+                    <code>SOUND_CONFIG.*</code> / <code>BGM_CONFIG.*</code> when the config file exists).
+                    Also reports ids serialized on the open scene but not referenced in code.
+                </p>
+                <p class="tips-fields-label">Fields used:</p>
+                <ul class="tips-fields">
+                    <li><strong>Game ID</strong> — locates scripts folder and optional <code>SoundConfig{gameId}.ts</code></li>
+                    <li><strong>Project path</strong> — scripts folder to search for usages</li>
+                    <li><strong>Sound node</strong> — source list of sound ids to check</li>
+                </ul>
+                <p class="tips-note">Not used: SFX folder, Preserve BGM checkbox. SoundConfig file is optional.</p>
+            </div>
+        </details>
     </div>
 </div>
