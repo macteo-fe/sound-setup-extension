@@ -19,9 +19,9 @@
             "main": "dist/panels/default",
             "size": {
                 "min-width": 400,
-                "min-height": 300,
+                "min-height": 520,
                 "width": 1024,
-                "height": 600
+                "height": 900
             }
         }
     },
