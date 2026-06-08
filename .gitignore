@@ -2,7 +2,6 @@
 node_modules/
 
 # TypeScript build output (run `npm run build` after clone)
-dist/
 *.tsbuildinfo
 
 # Logs
