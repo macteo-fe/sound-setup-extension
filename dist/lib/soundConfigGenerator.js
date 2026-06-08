@@ -23,7 +23,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.writeSoundConfigFile = exports.formatGenerateConfigHtml = exports.getSoundListKeysFromNode = exports.generateSoundConfigContent = exports.mergeConfigKeys = exports.extractConfigKeys = exports.extractConfigBlock = void 0;
+exports.writeSoundConfigFile = exports.formatGenerateConfigHtml = exports.getSoundListKeysFromNode = exports.generateSoundConfigContent = exports.syncConfigKeys = exports.extractConfigKeys = exports.extractConfigBlock = void 0;
 const fs = __importStar(require("fs-extra"));
 const path = __importStar(require("path"));
 const editorAsset_1 = require("./editorAsset");
@@ -58,48 +58,53 @@ function extractConfigKeys(source, blockName) {
     return keys;
 }
 exports.extractConfigKeys = extractConfigKeys;
-function mergeConfigKeys(existing, incoming) {
-    const merged = [...existing];
+/** Sync config keys to match the scene list exactly (add new, remove missing). */
+function syncConfigKeys(existing, incoming) {
     const existingSet = new Set(existing.map((id) => (0, editorAsset_1.normalizeSoundId)(id)));
+    const merged = [];
+    const seen = new Set();
     const added = [];
-    const skipped = [];
-    const pendingAdded = new Set();
+    const unchanged = [];
     for (const raw of incoming) {
         const key = (0, editorAsset_1.normalizeSoundId)(raw);
-        if (!key) {
+        if (!key || seen.has(key)) {
             continue;
         }
-        if (existingSet.has(key)) {
-            skipped.push(key);
-            continue;
-        }
-        if (pendingAdded.has(key)) {
-            skipped.push(key);
-            continue;
-        }
-        pendingAdded.add(key);
-        existingSet.add(key);
-        added.push(key);
+        seen.add(key);
         merged.push(key);
+        if (existingSet.has(key)) {
+            unchanged.push(key);
+        }
+        else {
+            added.push(key);
+        }
     }
-    return { merged, added, skipped };
+    const incomingSet = new Set(merged);
+    const removed = [];
+    for (const raw of existing) {
+        const key = (0, editorAsset_1.normalizeSoundId)(raw);
+        if (key && !incomingSet.has(key)) {
+            removed.push(key);
+        }
+    }
+    return { merged, added, removed, unchanged };
 }
-exports.mergeConfigKeys = mergeConfigKeys;
+exports.syncConfigKeys = syncConfigKeys;
 function generateSoundConfigContent(options) {
     const { sfxSoundIds, musicSoundIds = [], preserveBgm, existingContent } = options;
     const existingSfx = existingContent ? extractConfigKeys(existingContent, 'SOUND_CONFIG') : [];
-    const incomingSfx = [...new Set(sfxSoundIds.map((id) => (0, editorAsset_1.normalizeSoundId)(id)))].filter(Boolean);
-    const sfx = mergeConfigKeys(existingSfx, incomingSfx);
+    const incomingSfx = sfxSoundIds.map((id) => (0, editorAsset_1.normalizeSoundId)(id)).filter(Boolean);
+    const sfx = syncConfigKeys(existingSfx, incomingSfx);
     const parts = [buildConfigBlock('SOUND_CONFIG', sfx.merged)];
     const existingBgm = existingContent ? extractConfigKeys(existingContent, 'BGM_CONFIG') : [];
-    const incomingBgm = [...new Set(musicSoundIds.map((id) => (0, editorAsset_1.normalizeSoundId)(id)))].filter(Boolean);
+    const incomingBgm = musicSoundIds.map((id) => (0, editorAsset_1.normalizeSoundId)(id)).filter(Boolean);
     if (incomingBgm.length > 0) {
-        const bgm = mergeConfigKeys(existingBgm, incomingBgm);
+        const bgm = syncConfigKeys(existingBgm, incomingBgm);
         parts.push('');
         parts.push(buildConfigBlock('BGM_CONFIG', bgm.merged));
         return { content: `${parts.join('\n')}\n`, sfx, bgm };
     }
-    const bgm = { merged: existingBgm, added: [], skipped: [] };
+    const bgm = { merged: existingBgm, added: [], removed: [], unchanged: [...existingBgm] };
     if (preserveBgm && existingContent) {
         const bgmBlock = extractConfigBlock(existingContent, 'BGM_CONFIG');
         if (bgmBlock) {
@@ -115,7 +120,7 @@ Object.defineProperty(exports, "getSoundListKeysFromNode", { enumerable: true, g
 function formatGenerateConfigHtml(configPath, lists, preserveBgm, result) {
     const lines = [
         `<div class="ok">Generated ${configPath}</div>`,
-        `<div class="info">From node: ${lists.nodeName || 'sound node'} — SFX added: ${result.sfx.added.length}, skipped (already in file): ${result.sfx.skipped.length}, total: ${result.sfx.merged.length}</div>`,
+        `<div class="info">From node: ${lists.nodeName || 'sound node'} — SFX synced: +${result.sfx.added.length} −${result.sfx.removed.length}, total: ${result.sfx.merged.length}</div>`,
     ];
     if (result.sfx.added.length) {
         lines.push('<div class="section-title">SOUND_CONFIG added</div>');
@@ -123,19 +128,19 @@ function formatGenerateConfigHtml(configPath, lists, preserveBgm, result) {
             lines.push(`<div class="ok">+ ${id}</div>`);
         }
     }
-    if (result.sfx.skipped.length) {
-        lines.push('<div class="section-title">SOUND_CONFIG skipped (already exists)</div>');
-        for (const id of result.sfx.skipped) {
-            lines.push(`<div class="warn">− ${id}</div>`);
+    if (result.sfx.removed.length) {
+        lines.push('<div class="section-title">SOUND_CONFIG removed (not on sfxList)</div>');
+        for (const id of result.sfx.removed) {
+            lines.push(`<div class="unused">− ${id}</div>`);
         }
     }
-    if (result.bgm.added.length || result.bgm.skipped.length) {
-        lines.push(`<div class="info">BGM — added: ${result.bgm.added.length}, skipped: ${result.bgm.skipped.length}, total: ${result.bgm.merged.length}</div>`);
+    if (result.bgm.added.length || result.bgm.removed.length) {
+        lines.push(`<div class="info">BGM synced: +${result.bgm.added.length} −${result.bgm.removed.length}, total: ${result.bgm.merged.length}</div>`);
         for (const id of result.bgm.added) {
             lines.push(`<div class="ok">+ ${id}</div>`);
         }
-        for (const id of result.bgm.skipped) {
-            lines.push(`<div class="warn">− ${id}</div>`);
+        for (const id of result.bgm.removed) {
+            lines.push(`<div class="unused">− ${id}</div>`);
         }
     }
     else if (preserveBgm && !lists.musicSoundIds.length) {

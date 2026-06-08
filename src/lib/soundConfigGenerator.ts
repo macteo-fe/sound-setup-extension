@@ -40,45 +40,52 @@ export function extractConfigKeys(source: string, blockName: string): string[] {
     return keys;
 }
 
-export interface MergeConfigKeysResult {
+export interface SyncConfigKeysResult {
+    /** Final keys in scene list order */
     merged: string[];
     added: string[];
-    skipped: string[];
+    removed: string[];
+    unchanged: string[];
 }
 
-export function mergeConfigKeys(existing: string[], incoming: string[]): MergeConfigKeysResult {
-    const merged = [...existing];
+/** Sync config keys to match the scene list exactly (add new, remove missing). */
+export function syncConfigKeys(existing: string[], incoming: string[]): SyncConfigKeysResult {
     const existingSet = new Set(existing.map((id) => normalizeSoundId(id)));
+    const merged: string[] = [];
+    const seen = new Set<string>();
     const added: string[] = [];
-    const skipped: string[] = [];
-    const pendingAdded = new Set<string>();
+    const unchanged: string[] = [];
 
     for (const raw of incoming) {
         const key = normalizeSoundId(raw);
-        if (!key) {
+        if (!key || seen.has(key)) {
             continue;
         }
-        if (existingSet.has(key)) {
-            skipped.push(key);
-            continue;
-        }
-        if (pendingAdded.has(key)) {
-            skipped.push(key);
-            continue;
-        }
-        pendingAdded.add(key);
-        existingSet.add(key);
-        added.push(key);
+        seen.add(key);
         merged.push(key);
+        if (existingSet.has(key)) {
+            unchanged.push(key);
+        } else {
+            added.push(key);
+        }
     }
 
-    return { merged, added, skipped };
+    const incomingSet = new Set(merged);
+    const removed: string[] = [];
+    for (const raw of existing) {
+        const key = normalizeSoundId(raw);
+        if (key && !incomingSet.has(key)) {
+            removed.push(key);
+        }
+    }
+
+    return { merged, added, removed, unchanged };
 }
 
 export interface GenerateSoundConfigResult {
     content: string;
-    sfx: MergeConfigKeysResult;
-    bgm: MergeConfigKeysResult;
+    sfx: SyncConfigKeysResult;
+    bgm: SyncConfigKeysResult;
 }
 
 export function generateSoundConfigContent(options: {
@@ -90,22 +97,22 @@ export function generateSoundConfigContent(options: {
     const { sfxSoundIds, musicSoundIds = [], preserveBgm, existingContent } = options;
 
     const existingSfx = existingContent ? extractConfigKeys(existingContent, 'SOUND_CONFIG') : [];
-    const incomingSfx = [...new Set(sfxSoundIds.map((id) => normalizeSoundId(id)))].filter(Boolean);
-    const sfx = mergeConfigKeys(existingSfx, incomingSfx);
+    const incomingSfx = sfxSoundIds.map((id) => normalizeSoundId(id)).filter(Boolean);
+    const sfx = syncConfigKeys(existingSfx, incomingSfx);
 
     const parts: string[] = [buildConfigBlock('SOUND_CONFIG', sfx.merged)];
 
     const existingBgm = existingContent ? extractConfigKeys(existingContent, 'BGM_CONFIG') : [];
-    const incomingBgm = [...new Set(musicSoundIds.map((id) => normalizeSoundId(id)))].filter(Boolean);
+    const incomingBgm = musicSoundIds.map((id) => normalizeSoundId(id)).filter(Boolean);
 
     if (incomingBgm.length > 0) {
-        const bgm = mergeConfigKeys(existingBgm, incomingBgm);
+        const bgm = syncConfigKeys(existingBgm, incomingBgm);
         parts.push('');
         parts.push(buildConfigBlock('BGM_CONFIG', bgm.merged));
         return { content: `${parts.join('\n')}\n`, sfx, bgm };
     }
 
-    const bgm: MergeConfigKeysResult = { merged: existingBgm, added: [], skipped: [] };
+    const bgm: SyncConfigKeysResult = { merged: existingBgm, added: [], removed: [], unchanged: [...existingBgm] };
     if (preserveBgm && existingContent) {
         const bgmBlock = extractConfigBlock(existingContent, 'BGM_CONFIG');
         if (bgmBlock) {
@@ -127,7 +134,7 @@ export function formatGenerateConfigHtml(
 ): string {
     const lines: string[] = [
         `<div class="ok">Generated ${configPath}</div>`,
-        `<div class="info">From node: ${lists.nodeName || 'sound node'} — SFX added: ${result.sfx.added.length}, skipped (already in file): ${result.sfx.skipped.length}, total: ${result.sfx.merged.length}</div>`,
+        `<div class="info">From node: ${lists.nodeName || 'sound node'} — SFX synced: +${result.sfx.added.length} −${result.sfx.removed.length}, total: ${result.sfx.merged.length}</div>`,
     ];
 
     if (result.sfx.added.length) {
@@ -137,22 +144,22 @@ export function formatGenerateConfigHtml(
         }
     }
 
-    if (result.sfx.skipped.length) {
-        lines.push('<div class="section-title">SOUND_CONFIG skipped (already exists)</div>');
-        for (const id of result.sfx.skipped) {
-            lines.push(`<div class="warn">− ${id}</div>`);
+    if (result.sfx.removed.length) {
+        lines.push('<div class="section-title">SOUND_CONFIG removed (not on sfxList)</div>');
+        for (const id of result.sfx.removed) {
+            lines.push(`<div class="unused">− ${id}</div>`);
         }
     }
 
-    if (result.bgm.added.length || result.bgm.skipped.length) {
+    if (result.bgm.added.length || result.bgm.removed.length) {
         lines.push(
-            `<div class="info">BGM — added: ${result.bgm.added.length}, skipped: ${result.bgm.skipped.length}, total: ${result.bgm.merged.length}</div>`,
+            `<div class="info">BGM synced: +${result.bgm.added.length} −${result.bgm.removed.length}, total: ${result.bgm.merged.length}</div>`,
         );
         for (const id of result.bgm.added) {
             lines.push(`<div class="ok">+ ${id}</div>`);
         }
-        for (const id of result.bgm.skipped) {
-            lines.push(`<div class="warn">− ${id}</div>`);
+        for (const id of result.bgm.removed) {
+            lines.push(`<div class="unused">− ${id}</div>`);
         }
     } else if (preserveBgm && !lists.musicSoundIds.length) {
         lines.push('<div class="info">BGM_CONFIG preserved from existing file</div>');

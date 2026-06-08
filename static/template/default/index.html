@@ -81,11 +81,9 @@
             </summary>
             <div class="tips-body">
                 <p class="tips-desc">
-                    Reads <code>soundId</code> values from <strong>Sound node</strong> → <code>sfxList</code> and
-                    <code>musicList</code>, then writes
-                    <code>scripts/DataConfig/SoundConfig{gameId}.ts</code> under <strong>Project path</strong> with
-                    <code>SOUND_CONFIG</code> and <code>BGM_CONFIG</code> constant maps. Refreshes the asset in the
-                    database.
+                    Syncs <code>scripts/DataConfig/SoundConfig{gameId}.ts</code> with <strong>Sound node</strong> lists:
+                    <code>sfxList</code> → <code>SOUND_CONFIG</code> (adds new ids, removes ids no longer on scene),
+                    <code>musicList</code> → <code>BGM_CONFIG</code> when non-empty. Refreshes the asset in the database.
                 </p>
                 <p class="tips-fields-label">Fields used:</p>
                 <ul class="tips-fields">
