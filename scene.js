@@ -283,14 +283,26 @@ function collectSoundIdRefsInSceneImpl(allowedKeysRaw) {
                 }
                 try {
                     const v = comp[prop];
-                    if (typeof v !== 'string') {
+                    if (typeof v === 'string') {
+                        const k = normalizeSoundId(v);
+                        if (!k || !allowed.has(k)) {
+                            continue;
+                        }
+                        pushRef(v, `${nodePath} • ${cn} • ${prop}`);
                         continue;
                     }
-                    const k = normalizeSoundId(v);
-                    if (!k || !allowed.has(k)) {
-                        continue;
+                    if (Array.isArray(v)) {
+                        v.forEach((item, i) => {
+                            if (typeof item !== 'string') {
+                                return;
+                            }
+                            const k = normalizeSoundId(item);
+                            if (!k || !allowed.has(k)) {
+                                return;
+                            }
+                            pushRef(item, `${nodePath} • ${cn} • ${prop}[${i}]`);
+                        });
                     }
-                    pushRef(v, `${nodePath} • ${cn} • ${prop}`);
                 } catch {
                     /* ignore */
                 }
