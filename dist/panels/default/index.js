@@ -59,7 +59,7 @@ function formatCheckResultsHtml(results) {
         parts.push(`<div class="section-title">--- ${objectName} ---</div>`);
         const sceneOnly = new Set(usedOnSceneOnly.map((e) => e.key));
         const sceneOnlyByKey = new Map(usedOnSceneOnly.map((e) => [e.key, e.paths]));
-        const codeByKey = new Map(usedInCode.map((e) => [e.key, e.files]));
+        const codeByKey = new Map(usedInCode.map((e) => [e.key, e]));
         for (const key of used) {
             if (sceneOnly.has(key)) {
                 parts.push(`<div class="ok">✅ ${escapeHtml(key)} — on scene</div>`);
@@ -68,8 +68,13 @@ function formatCheckResultsHtml(results) {
                 }
             }
             else {
-                parts.push(`<div class="ok">✅ ${escapeHtml(key)}</div>`);
-                for (const file of codeByKey.get(key) || []) {
+                const entry = codeByKey.get(key);
+                const dynamicOnly = entry === null || entry === void 0 ? void 0 : entry.dynamicOnly;
+                const rowClass = dynamicOnly ? 'warn' : 'ok';
+                const marker = dynamicOnly ? '⚠️' : '✅';
+                const suffix = dynamicOnly ? ' — dynamic (may not cover all variants)' : '';
+                parts.push(`<div class="${rowClass}">${marker} ${escapeHtml(key)}${escapeHtml(suffix)}</div>`);
+                for (const file of (entry === null || entry === void 0 ? void 0 : entry.files) || []) {
                     parts.push(`<div class="used-code-path">${escapeHtml(file)}</div>`);
                 }
             }
@@ -82,7 +87,10 @@ function formatCheckResultsHtml(results) {
     const summary = (0, soundConfigChecker_1.summarizeCheckResults)(results);
     if (summary.total > 0) {
         parts.push(`<div class="section-title">Total: ${summary.used} / ${summary.total} used</div>`);
-        parts.push(`<div class="info">${summary.usedInCode} in code · ${summary.usedOnSceneOnly} on scene · ${summary.unused} unused</div>`);
+        const dynamicPart = summary.usedDynamicInCode > 0
+            ? ` · ${summary.usedDynamicInCode} dynamic in code`
+            : '';
+        parts.push(`<div class="info">${summary.usedInCode} in code${dynamicPart} · ${summary.usedOnSceneOnly} on scene · ${summary.unused} unused</div>`);
     }
     return parts.join('');
 }

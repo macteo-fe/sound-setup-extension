@@ -11,6 +11,8 @@ export interface UsedOnSceneOnlyEntry {
 export interface UsedInCodeEntry {
     key: string;
     files: string[];
+    /** Matched only via dynamic template prefix expansion (may not cover every variant). */
+    dynamicOnly?: boolean;
 }
 
 export interface ConfigCheckResult {
@@ -233,26 +235,40 @@ function yieldToUi(): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+interface CodeUsageIndex {
+    directRefs: Map<string, string[]>;
+    dynamicRefs: Map<string, string[]>;
+}
+
+function mergeRefMaps(refs: Map<string, Set<string>>): Map<string, string[]> {
+    const result = new Map<string, string[]>();
+    for (const [id, paths] of refs) {
+        result.set(id, [...paths].sort());
+    }
+    return result;
+}
+
 /** One pass over script files — avoids O(soundIds × files × heavy parse). */
 async function buildCodeUsageIndex(
     scriptFiles: ScriptFile[],
     allSoundIds: string[],
     allCode: string,
     configObjectNames: string[],
-): Promise<Map<string, string[]>> {
-    const refs = new Map<string, Set<string>>();
+): Promise<CodeUsageIndex> {
+    const directRefs = new Map<string, Set<string>>();
+    const dynamicRefs = new Map<string, Set<string>>();
     const soundIdSet = new Set(allSoundIds);
     const analysis = analyzeDynamicUsage(allCode, allSoundIds);
     const hasDynamicPatterns = analysis.prefixes.length > 0;
 
-    const addRef = (soundId: string, filePath: string): void => {
+    const addRef = (target: Map<string, Set<string>>, soundId: string, filePath: string): void => {
         if (!soundIdSet.has(soundId)) {
             return;
         }
-        let paths = refs.get(soundId);
+        let paths = target.get(soundId);
         if (!paths) {
             paths = new Set();
-            refs.set(soundId, paths);
+            target.set(soundId, paths);
         }
         paths.add(filePath);
     };
@@ -261,14 +277,14 @@ async function buildCodeUsageIndex(
         const file = scriptFiles[i];
         for (const soundId of allSoundIds) {
             if (isSoundIdReferencedInFile(soundId, file, configObjectNames)) {
-                addRef(soundId, file.relativePath);
+                addRef(directRefs, soundId, file.relativePath);
             }
         }
 
         if (hasDynamicPatterns && file.content.includes('`')) {
             if (file.content.includes('${')) {
                 for (const key of collectDynamicUsedKeys(file.content, allSoundIds)) {
-                    addRef(key, file.relativePath);
+                    addRef(dynamicRefs, key, file.relativePath);
                 }
             }
             for (const prefix of analysis.prefixes) {
@@ -277,7 +293,7 @@ async function buildCodeUsageIndex(
                     continue;
                 }
                 for (const key of keys) {
-                    addRef(key, file.relativePath);
+                    addRef(dynamicRefs, key, file.relativePath);
                 }
             }
         }
@@ -287,11 +303,10 @@ async function buildCodeUsageIndex(
         }
     }
 
-    const result = new Map<string, string[]>();
-    for (const [id, paths] of refs) {
-        result.set(id, [...paths].sort());
-    }
-    return result;
+    return {
+        directRefs: mergeRefMaps(directRefs),
+        dynamicRefs: mergeRefMaps(dynamicRefs),
+    };
 }
 
 async function fetchSoundIdRefsFromOpenScene(allConfigKeys: string[]): Promise<Record<string, string[]>> {
@@ -346,10 +361,14 @@ export interface SoundUsageCheckOptions {
     configFsPath?: string;
 }
 
+function mergeCodeRefFiles(directFiles: string[], dynamicFiles: string[]): string[] {
+    return [...new Set([...directFiles, ...dynamicFiles])].sort();
+}
+
 function checkSoundIdsInCategory(
     objectName: string,
     soundIds: string[],
-    codeUsageIndex: Map<string, string[]>,
+    codeUsageIndex: CodeUsageIndex,
     sceneRefsByNormalized: Record<string, string[]>,
 ): ConfigCheckResult {
     const used: string[] = [];
@@ -358,10 +377,16 @@ function checkSoundIdsInCategory(
     const unusedNotInScene: string[] = [];
 
     for (const soundId of [...new Set(soundIds.map((id) => normalizeSoundId(id)))].filter(Boolean).sort()) {
-        const codeFiles = codeUsageIndex.get(soundId) || [];
+        const directFiles = codeUsageIndex.directRefs.get(soundId) || [];
+        const dynamicFiles = codeUsageIndex.dynamicRefs.get(soundId) || [];
+        const codeFiles = mergeCodeRefFiles(directFiles, dynamicFiles);
         if (codeFiles.length) {
             used.push(soundId);
-            usedInCode.push({ key: soundId, files: codeFiles });
+            usedInCode.push({
+                key: soundId,
+                files: codeFiles,
+                dynamicOnly: !directFiles.length && dynamicFiles.length > 0,
+            });
             continue;
         }
         const paths = sceneRefsByNormalized[soundId];
@@ -435,6 +460,7 @@ export interface CheckUsageSummary {
     total: number;
     used: number;
     usedInCode: number;
+    usedDynamicInCode: number;
     usedOnSceneOnly: number;
     unused: number;
 }
@@ -443,24 +469,29 @@ export function summarizeCheckResults(results: ConfigCheckResult[]): CheckUsageS
     let usedOnSceneOnly = 0;
     let unused = 0;
     let used = 0;
+    let usedDynamicInCode = 0;
     for (const r of results) {
         used += r.used.length;
         usedOnSceneOnly += r.usedOnSceneOnly.length;
         unused += r.unusedNotInScene.length;
+        usedDynamicInCode += r.usedInCode.filter((e) => e.dynamicOnly).length;
     }
     return {
         total: used + unused,
         used,
         usedInCode: used - usedOnSceneOnly,
+        usedDynamicInCode,
         usedOnSceneOnly,
         unused,
     };
 }
 
 function formatCheckSummaryLine(summary: CheckUsageSummary): string {
+    const dynamicPart =
+        summary.usedDynamicInCode > 0 ? `, ${summary.usedDynamicInCode} dynamic in code` : '';
     return (
         `Total: ${summary.used} / ${summary.total} used` +
-        ` (${summary.usedInCode} in code, ${summary.usedOnSceneOnly} on scene)` +
+        ` (${summary.usedInCode} in code${dynamicPart}, ${summary.usedOnSceneOnly} on scene)` +
         ` · ${summary.unused} unused`
     );
 }
@@ -469,8 +500,8 @@ function sceneOnlyKeySet(entries: UsedOnSceneOnlyEntry[]): Set<string> {
     return new Set(entries.map((e) => e.key));
 }
 
-function usedInCodeByKey(entries: UsedInCodeEntry[]): Map<string, string[]> {
-    return new Map(entries.map((e) => [e.key, e.files]));
+function usedInCodeByKey(entries: UsedInCodeEntry[]): Map<string, UsedInCodeEntry> {
+    return new Map(entries.map((e) => [e.key, e]));
 }
 
 export function formatCheckResults(results: ConfigCheckResult[]): string {
@@ -487,8 +518,11 @@ export function formatCheckResults(results: ConfigCheckResult[]): string {
                     lines.push(`    ${p}`);
                 }
             } else {
-                lines.push(`✅ ${key}`);
-                for (const file of codeByKey.get(key) || []) {
+                const entry = codeByKey.get(key);
+                const marker = entry?.dynamicOnly ? '⚠️' : '✅';
+                const suffix = entry?.dynamicOnly ? '  (dynamic — may not cover all variants)' : '';
+                lines.push(`${marker} ${key}${suffix}`);
+                for (const file of entry?.files || []) {
                     lines.push(`    ${file}`);
                 }
             }

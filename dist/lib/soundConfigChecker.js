@@ -192,20 +192,28 @@ function fileMatchesDynamicPrefix(file, prefix, prefixMap) {
 function yieldToUi() {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }
+function mergeRefMaps(refs) {
+    const result = new Map();
+    for (const [id, paths] of refs) {
+        result.set(id, [...paths].sort());
+    }
+    return result;
+}
 /** One pass over script files — avoids O(soundIds × files × heavy parse). */
 async function buildCodeUsageIndex(scriptFiles, allSoundIds, allCode, configObjectNames) {
-    const refs = new Map();
+    const directRefs = new Map();
+    const dynamicRefs = new Map();
     const soundIdSet = new Set(allSoundIds);
     const analysis = analyzeDynamicUsage(allCode, allSoundIds);
     const hasDynamicPatterns = analysis.prefixes.length > 0;
-    const addRef = (soundId, filePath) => {
+    const addRef = (target, soundId, filePath) => {
         if (!soundIdSet.has(soundId)) {
             return;
         }
-        let paths = refs.get(soundId);
+        let paths = target.get(soundId);
         if (!paths) {
             paths = new Set();
-            refs.set(soundId, paths);
+            target.set(soundId, paths);
         }
         paths.add(filePath);
     };
@@ -213,13 +221,13 @@ async function buildCodeUsageIndex(scriptFiles, allSoundIds, allCode, configObje
         const file = scriptFiles[i];
         for (const soundId of allSoundIds) {
             if (isSoundIdReferencedInFile(soundId, file, configObjectNames)) {
-                addRef(soundId, file.relativePath);
+                addRef(directRefs, soundId, file.relativePath);
             }
         }
         if (hasDynamicPatterns && file.content.includes('`')) {
             if (file.content.includes('${')) {
                 for (const key of collectDynamicUsedKeys(file.content, allSoundIds)) {
-                    addRef(key, file.relativePath);
+                    addRef(dynamicRefs, key, file.relativePath);
                 }
             }
             for (const prefix of analysis.prefixes) {
@@ -228,7 +236,7 @@ async function buildCodeUsageIndex(scriptFiles, allSoundIds, allCode, configObje
                     continue;
                 }
                 for (const key of keys) {
-                    addRef(key, file.relativePath);
+                    addRef(dynamicRefs, key, file.relativePath);
                 }
             }
         }
@@ -236,11 +244,10 @@ async function buildCodeUsageIndex(scriptFiles, allSoundIds, allCode, configObje
             await yieldToUi();
         }
     }
-    const result = new Map();
-    for (const [id, paths] of refs) {
-        result.set(id, [...paths].sort());
-    }
-    return result;
+    return {
+        directRefs: mergeRefMaps(directRefs),
+        dynamicRefs: mergeRefMaps(dynamicRefs),
+    };
 }
 async function fetchSoundIdRefsFromOpenScene(allConfigKeys) {
     if (!allConfigKeys.length) {
@@ -283,16 +290,25 @@ async function readScriptFiles(scriptsDir, excludeFsPath) {
 function joinScriptCode(scriptFiles) {
     return scriptFiles.map((f) => f.content).join('\n');
 }
+function mergeCodeRefFiles(directFiles, dynamicFiles) {
+    return [...new Set([...directFiles, ...dynamicFiles])].sort();
+}
 function checkSoundIdsInCategory(objectName, soundIds, codeUsageIndex, sceneRefsByNormalized) {
     const used = [];
     const usedInCode = [];
     const usedOnSceneOnly = [];
     const unusedNotInScene = [];
     for (const soundId of [...new Set(soundIds.map((id) => (0, editorAsset_1.normalizeSoundId)(id)))].filter(Boolean).sort()) {
-        const codeFiles = codeUsageIndex.get(soundId) || [];
+        const directFiles = codeUsageIndex.directRefs.get(soundId) || [];
+        const dynamicFiles = codeUsageIndex.dynamicRefs.get(soundId) || [];
+        const codeFiles = mergeCodeRefFiles(directFiles, dynamicFiles);
         if (codeFiles.length) {
             used.push(soundId);
-            usedInCode.push({ key: soundId, files: codeFiles });
+            usedInCode.push({
+                key: soundId,
+                files: codeFiles,
+                dynamicOnly: !directFiles.length && dynamicFiles.length > 0,
+            });
             continue;
         }
         const paths = sceneRefsByNormalized[soundId];
@@ -355,30 +371,34 @@ function summarizeCheckResults(results) {
     let usedOnSceneOnly = 0;
     let unused = 0;
     let used = 0;
+    let usedDynamicInCode = 0;
     for (const r of results) {
         used += r.used.length;
         usedOnSceneOnly += r.usedOnSceneOnly.length;
         unused += r.unusedNotInScene.length;
+        usedDynamicInCode += r.usedInCode.filter((e) => e.dynamicOnly).length;
     }
     return {
         total: used + unused,
         used,
         usedInCode: used - usedOnSceneOnly,
+        usedDynamicInCode,
         usedOnSceneOnly,
         unused,
     };
 }
 exports.summarizeCheckResults = summarizeCheckResults;
 function formatCheckSummaryLine(summary) {
+    const dynamicPart = summary.usedDynamicInCode > 0 ? `, ${summary.usedDynamicInCode} dynamic in code` : '';
     return (`Total: ${summary.used} / ${summary.total} used` +
-        ` (${summary.usedInCode} in code, ${summary.usedOnSceneOnly} on scene)` +
+        ` (${summary.usedInCode} in code${dynamicPart}, ${summary.usedOnSceneOnly} on scene)` +
         ` · ${summary.unused} unused`);
 }
 function sceneOnlyKeySet(entries) {
     return new Set(entries.map((e) => e.key));
 }
 function usedInCodeByKey(entries) {
-    return new Map(entries.map((e) => [e.key, e.files]));
+    return new Map(entries.map((e) => [e.key, e]));
 }
 function formatCheckResults(results) {
     const lines = ['=== Sound usage (from sound node) ==='];
@@ -395,8 +415,11 @@ function formatCheckResults(results) {
                 }
             }
             else {
-                lines.push(`✅ ${key}`);
-                for (const file of codeByKey.get(key) || []) {
+                const entry = codeByKey.get(key);
+                const marker = (entry === null || entry === void 0 ? void 0 : entry.dynamicOnly) ? '⚠️' : '✅';
+                const suffix = (entry === null || entry === void 0 ? void 0 : entry.dynamicOnly) ? '  (dynamic — may not cover all variants)' : '';
+                lines.push(`${marker} ${key}${suffix}`);
+                for (const file of (entry === null || entry === void 0 ? void 0 : entry.files) || []) {
                     lines.push(`    ${file}`);
                 }
             }

@@ -353,6 +353,11 @@ ui-checkbox {
     color: #4ade80;
 }
 
+.results-body .warn {
+    color: #fbbf24;
+    font-weight: 600;
+}
+
 .results-body .unused {
     color: #f87171;
 }
