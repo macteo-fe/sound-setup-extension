@@ -290,6 +290,31 @@ async function readScriptFiles(scriptsDir, excludeFsPath) {
 function joinScriptCode(scriptFiles) {
     return scriptFiles.map((f) => f.content).join('\n');
 }
+function collectConfigObjectNames(objects, gameId) {
+    const names = [];
+    const prefer = (base) => {
+        var _a, _b, _c;
+        if (gameId && ((_a = objects[`${base}_${gameId}`]) === null || _a === void 0 ? void 0 : _a.length)) {
+            names.push(`${base}_${gameId}`);
+            return;
+        }
+        if ((_b = objects[base]) === null || _b === void 0 ? void 0 : _b.length) {
+            names.push(base);
+            return;
+        }
+        for (const key of Object.keys(objects)) {
+            if (key === base || key.startsWith(`${base}_`)) {
+                if ((_c = objects[key]) === null || _c === void 0 ? void 0 : _c.length) {
+                    names.push(key);
+                    break;
+                }
+            }
+        }
+    };
+    prefer('SOUND_CONFIG');
+    prefer('BGM_CONFIG');
+    return names;
+}
 function mergeCodeRefFiles(directFiles, dynamicFiles) {
     return [...new Set([...directFiles, ...dynamicFiles])].sort();
 }
@@ -323,19 +348,13 @@ function checkSoundIdsInCategory(objectName, soundIds, codeUsageIndex, sceneRefs
     return { objectName, used, usedInCode, usedOnSceneOnly, unusedNotInScene };
 }
 async function checkSoundUsage(options) {
-    var _a, _b;
-    const { scriptsDir, sfxSoundIds, musicSoundIds, configFsPath } = options;
+    const { scriptsDir, sfxSoundIds, musicSoundIds, configFsPath, gameId } = options;
     const configExists = configFsPath ? await fs.pathExists(configFsPath) : false;
-    const configObjectNames = [];
+    let configObjectNames = [];
     if (configExists && configFsPath) {
         const configContent = await fs.readFile(configFsPath, 'utf-8');
         const objects = extractObjects(configContent.split('\n'));
-        if ((_a = objects.SOUND_CONFIG) === null || _a === void 0 ? void 0 : _a.length) {
-            configObjectNames.push('SOUND_CONFIG');
-        }
-        if ((_b = objects.BGM_CONFIG) === null || _b === void 0 ? void 0 : _b.length) {
-            configObjectNames.push('BGM_CONFIG');
-        }
+        configObjectNames = collectConfigObjectNames(objects, gameId);
     }
     const scriptFiles = await readScriptFiles(scriptsDir, configExists ? configFsPath : undefined);
     const allCode = joinScriptCode(scriptFiles);
@@ -356,14 +375,18 @@ async function checkSoundUsage(options) {
 }
 exports.checkSoundUsage = checkSoundUsage;
 /** @deprecated Use checkSoundUsage — checks sound ids from the sound node, not the config file */
-async function checkSoundConfigUsage(configFsPath, scriptsDir) {
+async function checkSoundConfigUsage(configFsPath, scriptsDir, gameId) {
     const configContent = await fs.readFile(configFsPath, 'utf-8');
     const objects = extractObjects(configContent.split('\n'));
+    const configObjectNames = collectConfigObjectNames(objects, gameId);
+    const sfxName = configObjectNames.find((n) => n.startsWith('SOUND_CONFIG')) || 'SOUND_CONFIG';
+    const bgmName = configObjectNames.find((n) => n.startsWith('BGM_CONFIG')) || 'BGM_CONFIG';
     return checkSoundUsage({
         scriptsDir,
-        sfxSoundIds: objects.SOUND_CONFIG || [],
-        musicSoundIds: objects.BGM_CONFIG || [],
+        sfxSoundIds: objects[sfxName] || [],
+        musicSoundIds: objects[bgmName] || [],
         configFsPath,
+        gameId,
     });
 }
 exports.checkSoundConfigUsage = checkSoundConfigUsage;

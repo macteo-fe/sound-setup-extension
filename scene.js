@@ -4,6 +4,7 @@ const { director, Node, Component, js, assetManager } = require('cc');
 const SOUND_PLAYER_CLASS_NAMES = [
     'SoundPlayerModuleImpl',
     'SlotSoundPlayerModule',
+    'SlotSoundPlayer9824_2',
 ];
 
 function findNodeByUuid(scene, uuid) {

@@ -294,6 +294,7 @@ module.exports = Editor.Panel.define({
                     : undefined;
 
                 const generated = generateSoundConfigContent({
+                    gameId,
                     sfxSoundIds: lists.sfxSoundIds,
                     musicSoundIds: lists.musicSoundIds,
                     preserveBgm,
@@ -349,6 +350,7 @@ module.exports = Editor.Panel.define({
                     sfxSoundIds: lists.sfxSoundIds,
                     musicSoundIds: lists.musicSoundIds,
                     configFsPath: configExists ? configFsPath : undefined,
+                    gameId,
                 });
                 this.$.results.innerHTML = formatCheckResultsHtml(results);
                 logCheckResultsToConsole(results);

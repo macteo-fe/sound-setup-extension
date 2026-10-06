@@ -23,10 +23,19 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.writeSoundConfigFile = exports.formatGenerateConfigHtml = exports.getSoundListKeysFromNode = exports.generateSoundConfigContent = exports.syncConfigKeys = exports.extractConfigKeys = exports.extractConfigBlock = void 0;
+exports.writeSoundConfigFile = exports.formatGenerateConfigHtml = exports.getSoundListKeysFromNode = exports.generateSoundConfigContent = exports.syncConfigKeys = exports.extractConfigKeysForGame = exports.extractConfigKeys = exports.extractConfigBlock = exports.getBgmConfigConstName = exports.getSoundConfigConstName = void 0;
 const fs = __importStar(require("fs-extra"));
 const path = __importStar(require("path"));
 const editorAsset_1 = require("./editorAsset");
+/** `SOUND_CONFIG_9824` / `BGM_CONFIG_9824` */
+function getSoundConfigConstName(gameId) {
+    return `SOUND_CONFIG_${gameId}`;
+}
+exports.getSoundConfigConstName = getSoundConfigConstName;
+function getBgmConfigConstName(gameId) {
+    return `BGM_CONFIG_${gameId}`;
+}
+exports.getBgmConfigConstName = getBgmConfigConstName;
 function buildConfigBlock(name, keys) {
     const lines = [`export const ${name} = {`];
     for (const key of keys) {
@@ -58,6 +67,15 @@ function extractConfigKeys(source, blockName) {
     return keys;
 }
 exports.extractConfigKeys = extractConfigKeys;
+/** Prefer `SOUND_CONFIG_{gameId}` / `BGM_CONFIG_{gameId}`, fall back to unsuffixed legacy names. */
+function extractConfigKeysForGame(source, baseName, gameId) {
+    const suffixed = extractConfigKeys(source, `${baseName}_${gameId}`);
+    if (suffixed.length) {
+        return suffixed;
+    }
+    return extractConfigKeys(source, baseName);
+}
+exports.extractConfigKeysForGame = extractConfigKeysForGame;
 /** Sync config keys to match the scene list exactly (add new, remove missing). */
 function syncConfigKeys(existing, incoming) {
     const existingSet = new Set(existing.map((id) => (0, editorAsset_1.normalizeSoundId)(id)));
@@ -91,26 +109,29 @@ function syncConfigKeys(existing, incoming) {
 }
 exports.syncConfigKeys = syncConfigKeys;
 function generateSoundConfigContent(options) {
-    const { sfxSoundIds, musicSoundIds = [], preserveBgm, existingContent } = options;
-    const existingSfx = existingContent ? extractConfigKeys(existingContent, 'SOUND_CONFIG') : [];
+    const { gameId, sfxSoundIds, musicSoundIds = [], preserveBgm, existingContent } = options;
+    const soundConstName = getSoundConfigConstName(gameId);
+    const bgmConstName = getBgmConfigConstName(gameId);
+    const existingSfx = existingContent
+        ? extractConfigKeysForGame(existingContent, 'SOUND_CONFIG', gameId)
+        : [];
     const incomingSfx = sfxSoundIds.map((id) => (0, editorAsset_1.normalizeSoundId)(id)).filter(Boolean);
     const sfx = syncConfigKeys(existingSfx, incomingSfx);
-    const parts = [buildConfigBlock('SOUND_CONFIG', sfx.merged)];
-    const existingBgm = existingContent ? extractConfigKeys(existingContent, 'BGM_CONFIG') : [];
+    const parts = [buildConfigBlock(soundConstName, sfx.merged)];
+    const existingBgm = existingContent
+        ? extractConfigKeysForGame(existingContent, 'BGM_CONFIG', gameId)
+        : [];
     const incomingBgm = musicSoundIds.map((id) => (0, editorAsset_1.normalizeSoundId)(id)).filter(Boolean);
     if (incomingBgm.length > 0) {
         const bgm = syncConfigKeys(existingBgm, incomingBgm);
         parts.push('');
-        parts.push(buildConfigBlock('BGM_CONFIG', bgm.merged));
+        parts.push(buildConfigBlock(bgmConstName, bgm.merged));
         return { content: `${parts.join('\n')}\n`, sfx, bgm };
     }
     const bgm = { merged: existingBgm, added: [], removed: [], unchanged: [...existingBgm] };
-    if (preserveBgm && existingContent) {
-        const bgmBlock = extractConfigBlock(existingContent, 'BGM_CONFIG');
-        if (bgmBlock) {
-            parts.push('');
-            parts.push(bgmBlock);
-        }
+    if (preserveBgm && existingBgm.length) {
+        parts.push('');
+        parts.push(buildConfigBlock(bgmConstName, existingBgm));
     }
     return { content: `${parts.join('\n')}\n`, sfx, bgm };
 }
@@ -123,13 +144,13 @@ function formatGenerateConfigHtml(configPath, lists, preserveBgm, result) {
         `<div class="info">From node: ${lists.nodeName || 'sound node'} — SFX synced: +${result.sfx.added.length} −${result.sfx.removed.length}, total: ${result.sfx.merged.length}</div>`,
     ];
     if (result.sfx.added.length) {
-        lines.push('<div class="section-title">SOUND_CONFIG added</div>');
+        lines.push('<div class="section-title">SOUND_CONFIG_* added</div>');
         for (const id of result.sfx.added) {
             lines.push(`<div class="ok">+ ${id}</div>`);
         }
     }
     if (result.sfx.removed.length) {
-        lines.push('<div class="section-title">SOUND_CONFIG removed (not on sfxList)</div>');
+        lines.push('<div class="section-title">SOUND_CONFIG_* removed (not on sfxList)</div>');
         for (const id of result.sfx.removed) {
             lines.push(`<div class="unused">− ${id}</div>`);
         }
@@ -144,7 +165,7 @@ function formatGenerateConfigHtml(configPath, lists, preserveBgm, result) {
         }
     }
     else if (preserveBgm && !lists.musicSoundIds.length) {
-        lines.push('<div class="info">BGM_CONFIG preserved from existing file</div>');
+        lines.push('<div class="info">BGM_CONFIG_* preserved from existing file</div>');
     }
     return lines.join('');
 }

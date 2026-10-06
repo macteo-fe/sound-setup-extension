@@ -8,6 +8,15 @@ export interface SoundListKeys {
     nodeName?: string;
 }
 
+/** `SOUND_CONFIG_9824` / `BGM_CONFIG_9824` */
+export function getSoundConfigConstName(gameId: string): string {
+    return `SOUND_CONFIG_${gameId}`;
+}
+
+export function getBgmConfigConstName(gameId: string): string {
+    return `BGM_CONFIG_${gameId}`;
+}
+
 function buildConfigBlock(name: string, keys: string[]): string {
     const lines = [`export const ${name} = {`];
     for (const key of keys) {
@@ -38,6 +47,19 @@ export function extractConfigKeys(source: string, blockName: string): string[] {
         }
     }
     return keys;
+}
+
+/** Prefer `SOUND_CONFIG_{gameId}` / `BGM_CONFIG_{gameId}`, fall back to unsuffixed legacy names. */
+export function extractConfigKeysForGame(
+    source: string,
+    baseName: 'SOUND_CONFIG' | 'BGM_CONFIG',
+    gameId: string,
+): string[] {
+    const suffixed = extractConfigKeys(source, `${baseName}_${gameId}`);
+    if (suffixed.length) {
+        return suffixed;
+    }
+    return extractConfigKeys(source, baseName);
 }
 
 export interface SyncConfigKeysResult {
@@ -89,36 +111,40 @@ export interface GenerateSoundConfigResult {
 }
 
 export function generateSoundConfigContent(options: {
+    gameId: string;
     sfxSoundIds: string[];
     musicSoundIds?: string[];
     preserveBgm: boolean;
     existingContent?: string;
 }): GenerateSoundConfigResult {
-    const { sfxSoundIds, musicSoundIds = [], preserveBgm, existingContent } = options;
+    const { gameId, sfxSoundIds, musicSoundIds = [], preserveBgm, existingContent } = options;
+    const soundConstName = getSoundConfigConstName(gameId);
+    const bgmConstName = getBgmConfigConstName(gameId);
 
-    const existingSfx = existingContent ? extractConfigKeys(existingContent, 'SOUND_CONFIG') : [];
+    const existingSfx = existingContent
+        ? extractConfigKeysForGame(existingContent, 'SOUND_CONFIG', gameId)
+        : [];
     const incomingSfx = sfxSoundIds.map((id) => normalizeSoundId(id)).filter(Boolean);
     const sfx = syncConfigKeys(existingSfx, incomingSfx);
 
-    const parts: string[] = [buildConfigBlock('SOUND_CONFIG', sfx.merged)];
+    const parts: string[] = [buildConfigBlock(soundConstName, sfx.merged)];
 
-    const existingBgm = existingContent ? extractConfigKeys(existingContent, 'BGM_CONFIG') : [];
+    const existingBgm = existingContent
+        ? extractConfigKeysForGame(existingContent, 'BGM_CONFIG', gameId)
+        : [];
     const incomingBgm = musicSoundIds.map((id) => normalizeSoundId(id)).filter(Boolean);
 
     if (incomingBgm.length > 0) {
         const bgm = syncConfigKeys(existingBgm, incomingBgm);
         parts.push('');
-        parts.push(buildConfigBlock('BGM_CONFIG', bgm.merged));
+        parts.push(buildConfigBlock(bgmConstName, bgm.merged));
         return { content: `${parts.join('\n')}\n`, sfx, bgm };
     }
 
     const bgm: SyncConfigKeysResult = { merged: existingBgm, added: [], removed: [], unchanged: [...existingBgm] };
-    if (preserveBgm && existingContent) {
-        const bgmBlock = extractConfigBlock(existingContent, 'BGM_CONFIG');
-        if (bgmBlock) {
-            parts.push('');
-            parts.push(bgmBlock);
-        }
+    if (preserveBgm && existingBgm.length) {
+        parts.push('');
+        parts.push(buildConfigBlock(bgmConstName, existingBgm));
     }
 
     return { content: `${parts.join('\n')}\n`, sfx, bgm };
@@ -138,14 +164,14 @@ export function formatGenerateConfigHtml(
     ];
 
     if (result.sfx.added.length) {
-        lines.push('<div class="section-title">SOUND_CONFIG added</div>');
+        lines.push('<div class="section-title">SOUND_CONFIG_* added</div>');
         for (const id of result.sfx.added) {
             lines.push(`<div class="ok">+ ${id}</div>`);
         }
     }
 
     if (result.sfx.removed.length) {
-        lines.push('<div class="section-title">SOUND_CONFIG removed (not on sfxList)</div>');
+        lines.push('<div class="section-title">SOUND_CONFIG_* removed (not on sfxList)</div>');
         for (const id of result.sfx.removed) {
             lines.push(`<div class="unused">− ${id}</div>`);
         }
@@ -162,7 +188,7 @@ export function formatGenerateConfigHtml(
             lines.push(`<div class="unused">− ${id}</div>`);
         }
     } else if (preserveBgm && !lists.musicSoundIds.length) {
-        lines.push('<div class="info">BGM_CONFIG preserved from existing file</div>');
+        lines.push('<div class="info">BGM_CONFIG_* preserved from existing file</div>');
     }
 
     return lines.join('');

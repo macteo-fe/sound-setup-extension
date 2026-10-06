@@ -280,6 +280,7 @@ module.exports = Editor.Panel.define({
                     ? await fs.readFile(configFsPath, 'utf-8')
                     : undefined;
                 const generated = (0, soundConfigGenerator_1.generateSoundConfigContent)({
+                    gameId,
                     sfxSoundIds: lists.sfxSoundIds,
                     musicSoundIds: lists.musicSoundIds,
                     preserveBgm,
@@ -324,6 +325,7 @@ module.exports = Editor.Panel.define({
                     sfxSoundIds: lists.sfxSoundIds,
                     musicSoundIds: lists.musicSoundIds,
                     configFsPath: configExists ? configFsPath : undefined,
+                    gameId,
                 });
                 this.$.results.innerHTML = formatCheckResultsHtml(results);
                 logCheckResultsToConsole(results);
